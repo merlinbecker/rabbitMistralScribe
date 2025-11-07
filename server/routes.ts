@@ -28,6 +28,13 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Serve service worker with correct MIME type
+  app.get('/service-worker.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.sendFile('service-worker.js', { root: './public' });
+  });
+
   // Session configuration
   app.use(
     session({
@@ -288,7 +295,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transcriptionData = await transcriptionResponse.json();
       const transcript = transcriptionData.text;
 
-      // Summarize with Mistral
+      // Summarize with Mistral using custom template if available
+      const defaultTemplate = 'Du bist ein Assistent, der Audio-Notizen zusammenfasst. Erstelle eine strukturierte Zusammenfassung im Markdown-Format mit Hauptpunkten und wichtigen Details.';
+      const systemPrompt = settings.summaryTemplate || defaultTemplate;
+
       const summaryResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -300,7 +310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           messages: [
             {
               role: 'system',
-              content: 'Du bist ein Assistent, der Audio-Notizen zusammenfasst. Erstelle eine strukturierte Zusammenfassung im Markdown-Format mit Hauptpunkten und wichtigen Details.'
+              content: systemPrompt
             },
             {
               role: 'user',

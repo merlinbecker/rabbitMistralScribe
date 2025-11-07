@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Check, ExternalLink } from 'lucide-react';
 import { Link } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
@@ -21,12 +22,20 @@ export default function Settings() {
   const { toast } = useToast();
   const [apiKey, setApiKey] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
+  const [summaryTemplate, setSummaryTemplate] = useState('');
 
   // Fetch user settings
   const { data: settings, isLoading: settingsLoading, error: settingsError } = useQuery<UserSettings>({
     queryKey: ['/api/settings'],
     retry: 2,
   });
+
+  // Pre-fill summary template when settings load
+  useEffect(() => {
+    if (settings?.summaryTemplate && !summaryTemplate) {
+      setSummaryTemplate(settings.summaryTemplate);
+    }
+  }, [settings, summaryTemplate]);
 
   // Fetch GitHub repos
   const { data: repos = [], isLoading: reposLoading, error: reposError } = useQuery<GitHubRepo[]>({
@@ -58,11 +67,18 @@ export default function Settings() {
   const handleSave = () => {
     const repoData = selectedRepo ? selectedRepo.split('/') : null;
     
-    updateSettingsMutation.mutate({
-      mistralApiKey: apiKey || settings?.mistralApiKey,
-      githubRepoOwner: repoData ? repoData[0] : settings?.githubRepoOwner,
-      githubRepoName: repoData ? repoData[1] : settings?.githubRepoName,
-    });
+    const updates: UpdateUserSettings = {};
+    
+    if (apiKey) updates.mistralApiKey = apiKey;
+    if (repoData) {
+      updates.githubRepoOwner = repoData[0];
+      updates.githubRepoName = repoData[1];
+    }
+    if (summaryTemplate !== '') {
+      updates.summaryTemplate = summaryTemplate;
+    }
+    
+    updateSettingsMutation.mutate(updates);
   };
 
   return (
@@ -163,6 +179,34 @@ export default function Settings() {
               <p className="text-caption text-muted-foreground bg-muted p-2 rounded-md">
                 <Check className="w-3 h-3 inline mr-1" />
                 {settings.githubRepoOwner}/{settings.githubRepoName}
+              </p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-3">
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="summary-template" className="text-caption font-medium">
+                Zusammenfassungs-Vorlage (optional)
+              </Label>
+              <p className="text-caption text-muted-foreground mb-2">
+                Anweisungen für die KI-Zusammenfassung
+              </p>
+              <Textarea
+                id="summary-template"
+                placeholder="Erstelle eine strukturierte Zusammenfassung mit:\n- Hauptpunkte\n- Aktionselemente\n- Wichtige Erkenntnisse"
+                value={summaryTemplate}
+                onChange={(e) => setSummaryTemplate(e.target.value)}
+                className="text-body min-h-[80px] resize-none"
+                data-testid="textarea-summary-template"
+              />
+            </div>
+
+            {settings?.summaryTemplate && !summaryTemplate && (
+              <p className="text-caption text-muted-foreground bg-muted p-2 rounded-md">
+                <Check className="w-3 h-3 inline mr-1" />
+                Eigene Vorlage ist gespeichert
               </p>
             )}
           </div>

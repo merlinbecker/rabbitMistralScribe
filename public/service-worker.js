@@ -1,41 +1,59 @@
 const CACHE_NAME = 'audio-notes-v1';
 const urlsToCache = [
   '/',
-  '/index.html',
-  '/src/main.tsx',
-  '/src/index.css',
   '/manifest.json',
 ];
 
-// Install service worker
+// Install service worker and precache core assets
 self.addEventListener('install', (event) => {
+  console.log('Service Worker installing...');
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
-      })
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('Caching core assets');
+      return cache.addAll(urlsToCache).catch((err) => {
+        console.error('Failed to cache:', err);
+      });
+    })
   );
   self.skipWaiting();
 });
 
 // Fetch event - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
+  // Skip API calls and only cache GET requests for static assets
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    return;
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Clone the response
-        const responseToCache = response.clone();
-        
-        caches.open(CACHE_NAME)
-          .then((cache) => {
+        // Only cache successful responses
+        if (response.status === 200) {
+          const responseToCache = response.clone();
+          
+          caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
           });
+        }
         
         return response;
       })
       .catch(() => {
-        return caches.match(event.request);
+        // Fallback to cache if offline
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // For navigation requests, return cached index.html
+          if (event.request.mode === 'navigate') {
+            return caches.match('/');
+          }
+          return new Response('Offline - resource not cached', {
+            status: 503,
+            statusText: 'Service Unavailable'
+          });
+        });
       })
   );
 });

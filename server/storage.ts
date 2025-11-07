@@ -88,6 +88,7 @@ export class MemStorage implements IStorage {
       mistralApiKey: insertSettings.mistralApiKey ?? null,
       githubRepoOwner: insertSettings.githubRepoOwner ?? null,
       githubRepoName: insertSettings.githubRepoName ?? null,
+      summaryTemplate: insertSettings.summaryTemplate ?? null,
       updatedAt: new Date(),
     };
     this.userSettings.set(id, settings);
@@ -129,6 +130,7 @@ export class MemStorage implements IStorage {
       id,
       audioUrl: insertRecording.audioUrl ?? null,
       duration: insertRecording.duration ?? null,
+      status: insertRecording.status || 'pending',
       transcript: insertRecording.transcript ?? null,
       summary: insertRecording.summary ?? null,
       githubFileUrl: insertRecording.githubFileUrl ?? null,

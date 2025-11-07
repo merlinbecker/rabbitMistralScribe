@@ -19,6 +19,7 @@ export const userSettings = pgTable("user_settings", {
   mistralApiKey: text("mistral_api_key"),
   githubRepoOwner: text("github_repo_owner"),
   githubRepoName: text("github_repo_name"),
+  summaryTemplate: text("summary_template"), // Custom template for AI summarization
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

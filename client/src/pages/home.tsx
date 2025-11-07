@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { LEDPixelDisplay } from '@/components/LEDPixelDisplay';
 import { StatusBar } from '@/components/StatusBar';
@@ -6,8 +6,10 @@ import { RecordingControl } from '@/components/RecordingControl';
 import { RecordingsList } from '@/components/RecordingsList';
 import { useToast } from '@/hooks/use-toast';
 import { Recording } from '@shared/schema';
-import { Settings } from 'lucide-react';
+import { Settings, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Link } from 'wouter';
 import { queryClient } from '@/lib/queryClient';
 
@@ -15,6 +17,8 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -27,6 +31,27 @@ export default function Home() {
     queryKey: ['/api/recordings'],
     retry: 2,
   });
+
+  // Filter recordings based on search and status
+  const filteredRecordings = useMemo(() => {
+    let filtered = recordings;
+
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(r => r.status === statusFilter);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(r => 
+        r.transcript?.toLowerCase().includes(query) ||
+        r.summary?.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [recordings, searchQuery, statusFilter]);
 
   // Handle sideClick event for Rabbit R1
   useEffect(() => {
@@ -219,9 +244,48 @@ export default function Home() {
           </div>
 
           <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
+
+          {/* Search and Filter Controls */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Notizen durchsuchen..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 pr-8 text-body"
+                data-testid="input-search"
+              />
+              {searchQuery && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-0 top-1/2 transform -translate-y-1/2"
+                  data-testid="button-clear-search"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full" data-testid="select-status-filter">
+                <SelectValue placeholder="Status filtern" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Alle Status</SelectItem>
+                <SelectItem value="pending">Ausstehend</SelectItem>
+                <SelectItem value="transcribing">In Verarbeitung</SelectItem>
+                <SelectItem value="transcribed">Transkribiert</SelectItem>
+                <SelectItem value="failed">Fehler</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <RecordingsList recordings={recordings} isLoading={isLoading} />
+        <RecordingsList recordings={filteredRecordings} isLoading={isLoading} />
       </div>
 
       <RecordingControl 
