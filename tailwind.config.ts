@@ -5,13 +5,34 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      gridTemplateColumns: {
+        '16': 'repeat(16, minmax(0, 1fr))',
+      },
+      gridTemplateRows: {
+        '16': 'repeat(16, minmax(0, 1fr))',
+      },
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        lg: ".5rem", /* 8px - for buttons */
+        md: ".375rem", /* 6px - for cards/items */
+        sm: ".0625rem", /* 1px - for LED pixels */
+      },
+      fontSize: {
+        'status': '24px', // Display/Status
+        'body': '14px', // Body text
+        'caption': '11px', // Metadata, timestamps
+      },
+      spacing: {
+        '18': '4.5rem', /* 72px - custom for specific layouts */
       },
       colors: {
-        // Flat / base colors (regular buttons)
+        // LED pixel colors
+        led: {
+          low: '#FF8C00', // Orange - low frequency
+          mid: '#FFD700', // Yellow - mid frequency
+          high: '#FF4500', // Red - high frequency
+          inactive: '#000000', // Black - inactive pixels
+        },
+        // Flat / base colors
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
         border: "hsl(var(--border) / <alpha-value>)",
@@ -96,10 +117,15 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "pulse-recording": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-recording": "pulse-recording 1.5s ease-in-out infinite",
       },
     },
   },

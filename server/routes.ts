@@ -1,13 +1,499 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import session from "express-session";
+import multer from "multer";
 import { storage } from "./storage";
+import { insertRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
+import { z } from "zod";
+
+// Multer setup for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB max
+});
+
+// Session middleware
+declare module 'express-session' {
+  interface SessionData {
+    userId?: string;
+  }
+}
+
+// Auth middleware
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
+  // Session configuration
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || 'audio-notes-secret-key',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      },
+    })
+  );
 
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
+  // GitHub OAuth routes
+  app.get('/api/auth/github', (req, res) => {
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    
+    if (!clientId) {
+      return res.status(500).send('GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.');
+    }
+    
+    const redirectUri = `${process.env.REPL_HOME || 'http://localhost:5000'}/api/auth/github/callback`;
+    const scope = 'repo,user';
+    
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}`;
+    res.redirect(authUrl);
+  });
+
+  app.get('/api/auth/github/callback', async (req, res) => {
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.redirect('/?error=no_code');
+    }
+
+    if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
+      return res.redirect('/?error=oauth_not_configured');
+    }
+
+    try {
+      // Exchange code for access token
+      const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: process.env.GITHUB_CLIENT_ID,
+          client_secret: process.env.GITHUB_CLIENT_SECRET,
+          code,
+        }),
+      });
+
+      const tokenData = await tokenResponse.json();
+      const accessToken = tokenData.access_token;
+
+      if (!accessToken) {
+        return res.redirect('/?error=no_token');
+      }
+
+      // Get user info from GitHub
+      const userResponse = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+
+      const githubUser = await userResponse.json();
+
+      // Find or create user
+      let user = await storage.getUserByGitHubId(githubUser.id.toString());
+      
+      if (!user) {
+        user = await storage.createUser({
+          githubId: githubUser.id.toString(),
+          username: githubUser.login,
+          avatarUrl: githubUser.avatar_url,
+          accessToken,
+        });
+
+        // Create default settings
+        await storage.createUserSettings({
+          userId: user.id,
+          mistralApiKey: null,
+          githubRepoOwner: null,
+          githubRepoName: null,
+        });
+      } else {
+        // Update access token
+        await storage.updateUser(user.id, { accessToken });
+      }
+
+      // Set session
+      req.session.userId = user.id;
+
+      res.redirect('/');
+    } catch (error) {
+      console.error('GitHub OAuth error:', error);
+      res.redirect('/?error=oauth_failed');
+    }
+  });
+
+  app.get('/api/auth/user', requireAuth, async (req, res) => {
+    const user = await storage.getUser(req.session.userId!);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Don't send access token to frontend
+    const { accessToken, ...safeUser } = user;
+    res.json(safeUser);
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Logout failed' });
+      }
+      res.json({ success: true });
+    });
+  });
+
+  // Settings routes
+  app.get('/api/settings', requireAuth, async (req, res) => {
+    const settings = await storage.getUserSettings(req.session.userId!);
+    if (!settings) {
+      return res.status(404).json({ error: 'Settings not found' });
+    }
+    res.json(settings);
+  });
+
+  app.patch('/api/settings', requireAuth, async (req, res) => {
+    try {
+      const updates = updateUserSettingsSchema.parse(req.body);
+      const settings = await storage.updateUserSettings(req.session.userId!, updates);
+      
+      if (!settings) {
+        return res.status(404).json({ error: 'Settings not found' });
+      }
+      
+      res.json(settings);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: 'Failed to update settings' });
+    }
+  });
+
+  // GitHub repositories route
+  app.get('/api/github/repos', requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user || !user.accessToken) {
+        return res.status(401).json({ error: 'GitHub access token not found' });
+      }
+
+      const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+        headers: {
+          'Authorization': `Bearer ${user.accessToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+
+      const repos = await response.json();
+      res.json(repos);
+    } catch (error) {
+      console.error('Failed to fetch GitHub repos:', error);
+      res.status(500).json({ error: 'Failed to fetch repositories' });
+    }
+  });
+
+  // Recordings routes
+  app.get('/api/recordings', requireAuth, async (req, res) => {
+    const recordings = await storage.getRecordingsByUserId(req.session.userId!);
+    res.json(recordings);
+  });
+
+  app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No audio file provided' });
+      }
+
+      const duration = parseInt(req.body.duration || '0');
+      
+      // Store audio file as base64 (in production, would use cloud storage)
+      const audioBase64 = req.file.buffer.toString('base64');
+      const audioUrl = `data:${req.file.mimetype};base64,${audioBase64}`;
+      
+      // Create recording entry with audio
+      const recording = await storage.createRecording({
+        userId: req.session.userId!,
+        audioUrl,
+        duration,
+        status: 'pending',
+        transcript: null,
+        summary: null,
+        githubFileUrl: null,
+      });
+
+      // Automatically trigger transcription in background
+      // Don't await - let it process asynchronously
+      transcribeRecording(recording.id, req.session.userId!).catch((err) => {
+        console.error('Background transcription failed:', err);
+      });
+
+      res.json(recording);
+    } catch (error) {
+      console.error('Failed to create recording:', error);
+      res.status(500).json({ error: 'Failed to create recording' });
+    }
+  });
+
+  // Background transcription function
+  async function transcribeRecording(recordingId: string, userId: string) {
+    try {
+      const recording = await storage.getRecording(recordingId);
+      if (!recording) return;
+
+      const settings = await storage.getUserSettings(userId);
+      if (!settings?.mistralApiKey) {
+        await storage.updateRecording(recordingId, { status: 'failed' });
+        return;
+      }
+
+      await storage.updateRecording(recordingId, { status: 'transcribing' });
+
+      // Get audio data
+      if (!recording.audioUrl) {
+        await storage.updateRecording(recordingId, { status: 'failed' });
+        return;
+      }
+
+      const audioData = recording.audioUrl.split(',')[1];
+      const audioBuffer = Buffer.from(audioData, 'base64');
+
+      // Call Mistral Voxtral API
+      const formData = new FormData();
+      formData.append('file', new Blob([audioBuffer]), 'audio.webm');
+      formData.append('model', 'voxtral-24.02');
+
+      const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.mistralApiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!transcriptionResponse.ok) {
+        throw new Error(`Transcription failed: ${transcriptionResponse.statusText}`);
+      }
+
+      const transcriptionData = await transcriptionResponse.json();
+      const transcript = transcriptionData.text;
+
+      // Summarize with Mistral
+      const summaryResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.mistralApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'mistral-large-latest',
+          messages: [
+            {
+              role: 'system',
+              content: 'Du bist ein Assistent, der Audio-Notizen zusammenfasst. Erstelle eine strukturierte Zusammenfassung im Markdown-Format mit Hauptpunkten und wichtigen Details.'
+            },
+            {
+              role: 'user',
+              content: `Bitte fasse diese Notiz zusammen:\n\n${transcript}`
+            }
+          ],
+        }),
+      });
+
+      if (!summaryResponse.ok) {
+        throw new Error(`Summarization failed: ${summaryResponse.statusText}`);
+      }
+
+      const summaryData = await summaryResponse.json();
+      const summary = summaryData.choices[0].message.content;
+
+      // Update with results
+      await storage.updateRecording(recordingId, {
+        transcript,
+        summary,
+        status: 'transcribed',
+      });
+
+      // Save to GitHub if configured
+      if (settings.githubRepoOwner && settings.githubRepoName) {
+        await saveToGitHub(recordingId, userId);
+      }
+    } catch (error) {
+      console.error('Transcription error:', error);
+      await storage.updateRecording(recordingId, { status: 'failed' });
+    }
+  }
+
+  app.post('/api/recordings/:id/transcribe', requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const recording = await storage.getRecording(id);
+
+      if (!recording || recording.userId !== req.session.userId) {
+        return res.status(404).json({ error: 'Recording not found' });
+      }
+
+      // Get user settings for Mistral API key
+      const settings = await storage.getUserSettings(req.session.userId!);
+      if (!settings?.mistralApiKey) {
+        return res.status(400).json({ error: 'Mistral API key not configured' });
+      }
+
+      // Update status to transcribing
+      await storage.updateRecording(id, { status: 'transcribing' });
+
+      // Convert base64 audio back to blob for Mistral API
+      if (!recording.audioUrl) {
+        return res.status(400).json({ error: 'No audio data found' });
+      }
+
+      const audioData = recording.audioUrl.split(',')[1];
+      const audioBuffer = Buffer.from(audioData, 'base64');
+
+      // Call Mistral Voxtral API for transcription
+      const formData = new FormData();
+      formData.append('file', new Blob([audioBuffer]), 'audio.webm');
+      formData.append('model', 'voxtral-24.02');
+
+      const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.mistralApiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!transcriptionResponse.ok) {
+        throw new Error(`Transcription failed: ${transcriptionResponse.statusText}`);
+      }
+
+      const transcriptionData = await transcriptionResponse.json();
+      const transcript = transcriptionData.text;
+
+      // Now summarize with Mistral Agent
+      const summaryResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.mistralApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'mistral-large-latest',
+          messages: [
+            {
+              role: 'system',
+              content: 'Du bist ein Assistent, der Audio-Notizen zusammenfasst. Erstelle eine strukturierte Zusammenfassung im Markdown-Format mit Hauptpunkten und wichtigen Details.'
+            },
+            {
+              role: 'user',
+              content: `Bitte fasse diese Notiz zusammen:\n\n${transcript}`
+            }
+          ],
+        }),
+      });
+
+      if (!summaryResponse.ok) {
+        throw new Error(`Summarization failed: ${summaryResponse.statusText}`);
+      }
+
+      const summaryData = await summaryResponse.json();
+      const summary = summaryData.choices[0].message.content;
+
+      // Update recording with transcript and summary
+      await storage.updateRecording(id, {
+        transcript,
+        summary,
+        status: 'transcribed',
+      });
+
+      // Save to GitHub if configured
+      if (settings.githubRepoOwner && settings.githubRepoName) {
+        await saveToGitHub(id, req.session.userId!);
+      }
+
+      const updatedRecording = await storage.getRecording(id);
+      res.json(updatedRecording);
+    } catch (error) {
+      console.error('Transcription/summarization error:', error);
+      await storage.updateRecording(req.params.id, { status: 'failed' });
+      res.status(500).json({ error: 'Transcription failed' });
+    }
+  });
+
+  // Helper function to save to GitHub
+  async function saveToGitHub(recordingId: string, userId: string) {
+    const recording = await storage.getRecording(recordingId);
+    const user = await storage.getUser(userId);
+    const settings = await storage.getUserSettings(userId);
+
+    if (!recording || !user || !settings || !user.accessToken) {
+      throw new Error('Missing required data for GitHub save');
+    }
+
+    if (!settings.githubRepoOwner || !settings.githubRepoName) {
+      throw new Error('GitHub repository not configured');
+    }
+
+    // Create markdown content
+    const timestamp = recording.createdAt ? new Date(recording.createdAt).toISOString() : new Date().toISOString();
+    const filename = `audio-note-${timestamp.replace(/[:.]/g, '-')}.md`;
+    
+    const markdownContent = `# Audio-Notiz vom ${new Date(timestamp).toLocaleString('de-DE')}
+
+## Zusammenfassung
+
+${recording.summary || 'Keine Zusammenfassung verfügbar'}
+
+## Transkript
+
+${recording.transcript || 'Kein Transkript verfügbar'}
+
+---
+
+*Aufnahmedauer: ${recording.duration ? Math.floor(recording.duration / 60) : 0}:${recording.duration ? (recording.duration % 60).toString().padStart(2, '0') : '00'}*
+*Erstellt: ${new Date(timestamp).toLocaleString('de-DE')}*
+`;
+
+    const encodedContent = Buffer.from(markdownContent).toString('base64');
+
+    // Create file in GitHub repo
+    const createFileResponse = await fetch(
+      `https://api.github.com/repos/${settings.githubRepoOwner}/${settings.githubRepoName}/contents/audio-notes/${filename}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${user.accessToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: `Audio-Notiz vom ${new Date(timestamp).toLocaleString('de-DE')}`,
+          content: encodedContent,
+        }),
+      }
+    );
+
+    if (!createFileResponse.ok) {
+      throw new Error(`GitHub file creation failed: ${createFileResponse.statusText}`);
+    }
+
+    const fileData = await createFileResponse.json();
+    
+    // Update recording with GitHub URL
+    await storage.updateRecording(recordingId, {
+      githubFileUrl: fileData.content.html_url,
+    });
+  }
 
   const httpServer = createServer(app);
 
