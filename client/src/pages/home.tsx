@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { LEDPixelDisplay } from '@/components/LEDPixelDisplay';
 import { StatusBar } from '@/components/StatusBar';
 import { RecordingControl } from '@/components/RecordingControl';
 import { RecordingsList } from '@/components/RecordingsList';
 import { useToast } from '@/hooks/use-toast';
 import { Recording } from '@shared/schema';
-import { Settings, Search, X } from 'lucide-react';
+import { Settings, Search, X, Zap, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Link } from 'wouter';
-import { queryClient } from '@/lib/queryClient';
+import { queryClient, apiRequest } from '@/lib/queryClient';
 
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
@@ -52,6 +52,48 @@ export default function Home() {
 
     return filtered;
   }, [recordings, searchQuery, statusFilter]);
+
+  // Count pending recordings
+  const pendingCount = recordings.filter(r => r.status === 'pending').length;
+
+  // Batch transcribe mutation
+  const batchTranscribeMutation = useMutation({
+    mutationFn: async () => {
+      const pendingRecordings = recordings.filter(r => r.status === 'pending');
+      const results = [];
+      
+      for (const recording of pendingRecordings) {
+        try {
+          const result = await apiRequest(`/api/recordings/${recording.id}/transcribe`, {
+            method: 'POST',
+          });
+          results.push({ id: recording.id, success: true });
+        } catch (error) {
+          results.push({ id: recording.id, success: false, error });
+        }
+      }
+      
+      return results;
+    },
+    onSuccess: (results) => {
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+      
+      queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+      
+      toast({
+        title: 'Batch-Verarbeitung abgeschlossen',
+        description: `${successCount} erfolgreich, ${failCount} fehlgeschlagen`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Batch-Verarbeitung fehlgeschlagen',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
 
   // Handle sideClick event for Rabbit R1
   useEffect(() => {
@@ -270,18 +312,38 @@ export default function Home() {
               )}
             </div>
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full" data-testid="select-status-filter">
-                <SelectValue placeholder="Status filtern" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Status</SelectItem>
-                <SelectItem value="pending">Ausstehend</SelectItem>
-                <SelectItem value="transcribing">In Verarbeitung</SelectItem>
-                <SelectItem value="transcribed">Transkribiert</SelectItem>
-                <SelectItem value="failed">Fehler</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="flex-1" data-testid="select-status-filter">
+                  <SelectValue placeholder="Status filtern" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Alle Status</SelectItem>
+                  <SelectItem value="pending">Ausstehend</SelectItem>
+                  <SelectItem value="transcribing">In Verarbeitung</SelectItem>
+                  <SelectItem value="transcribed">Transkribiert</SelectItem>
+                  <SelectItem value="failed">Fehler</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {pendingCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => batchTranscribeMutation.mutate()}
+                  disabled={batchTranscribeMutation.isPending}
+                  data-testid="button-batch-transcribe"
+                  className="gap-1"
+                >
+                  {batchTranscribeMutation.isPending ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Zap className="w-3 h-3" />
+                  )}
+                  <span className="text-caption">Alle ({pendingCount})</span>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 

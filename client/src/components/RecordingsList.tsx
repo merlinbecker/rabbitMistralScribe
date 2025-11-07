@@ -3,9 +3,21 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Recording } from '@shared/schema';
-import { Clock, CheckCircle2, Loader2, AlertCircle, Mic, Play, Pause } from 'lucide-react';
+import { Clock, CheckCircle2, Loader2, AlertCircle, Mic, Play, Pause, Edit, Save, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { de } from 'date-fns/locale';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import { useMutation } from '@tanstack/react-query';
 
 interface RecordingsListProps {
   recordings: Recording[];
@@ -13,9 +25,55 @@ interface RecordingsListProps {
 }
 
 export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
+  const { toast } = useToast();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [editingRecording, setEditingRecording] = useState<Recording | null>(null);
+  const [editedTranscript, setEditedTranscript] = useState('');
+  const [editedSummary, setEditedSummary] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const updateRecordingMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Recording> }) => {
+      return await apiRequest(`/api/recordings/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+      toast({
+        title: 'Gespeichert',
+        description: 'Die Änderungen wurden gespeichert.',
+      });
+      setEditingRecording(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Fehler',
+        description: error.message || 'Speichern fehlgeschlagen',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleEdit = (recording: Recording) => {
+    setEditingRecording(recording);
+    setEditedTranscript(recording.transcript || '');
+    setEditedSummary(recording.summary || '');
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingRecording) return;
+    
+    updateRecordingMutation.mutate({
+      id: editingRecording.id,
+      updates: {
+        transcript: editedTranscript,
+        summary: editedSummary,
+      },
+    });
+  };
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -194,9 +252,81 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
                 {recording.transcript.length > 100 && '...'}
               </p>
             )}
+
+            {(recording.status === 'transcribed' || recording.transcript) && (
+              <div className="flex gap-2 mt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleEdit(recording)}
+                  data-testid={`button-edit-${recording.id}`}
+                  className="flex-1"
+                >
+                  <Edit className="w-3 h-3 mr-1" />
+                  Bearbeiten
+                </Button>
+              </div>
+            )}
           </Card>
         );
       })}
+
+      <Dialog open={!!editingRecording} onOpenChange={(open) => !open && setEditingRecording(null)}>
+        <DialogContent className="max-w-[220px]">
+          <DialogHeader>
+            <DialogTitle>Notiz bearbeiten</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="edit-transcript" className="text-caption">Transkript</Label>
+              <Textarea
+                id="edit-transcript"
+                value={editedTranscript}
+                onChange={(e) => setEditedTranscript(e.target.value)}
+                className="text-caption min-h-[80px] mt-1"
+                data-testid="input-edit-transcript"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="edit-summary" className="text-caption">Zusammenfassung</Label>
+              <Textarea
+                id="edit-summary"
+                value={editedSummary}
+                onChange={(e) => setEditedSummary(e.target.value)}
+                className="text-caption min-h-[80px] mt-1"
+                data-testid="input-edit-summary"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setEditingRecording(null)}
+              data-testid="button-cancel-edit"
+              size="sm"
+            >
+              <X className="w-3 h-3 mr-1" />
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={updateRecordingMutation.isPending}
+              data-testid="button-save-edit"
+              size="sm"
+            >
+              {updateRecordingMutation.isPending ? (
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              ) : (
+                <Save className="w-3 h-3 mr-1" />
+              )}
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
