@@ -174,15 +174,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch('/api/settings', requireAuth, async (req, res) => {
     try {
+      console.log('[SETTINGS] Update request for user:', req.session.userId);
+      console.log('[SETTINGS] Request body:', {
+        hasMistralKey: !!req.body.mistralApiKey,
+        mistralKeyLength: req.body.mistralApiKey?.length || 0,
+        hasGithubRepo: !!(req.body.githubRepoOwner && req.body.githubRepoName),
+        hasSummaryTemplate: !!req.body.summaryTemplate
+      });
+      
       const updates = updateUserSettingsSchema.parse(req.body);
       const settings = await storage.updateUserSettings(req.session.userId!, updates);
       
       if (!settings) {
+        console.error('[SETTINGS] Settings not found for user:', req.session.userId);
         return res.status(404).json({ error: 'Settings not found' });
       }
       
+      console.log('[SETTINGS] Settings updated successfully:', {
+        userId: settings.userId,
+        hasMistralKey: !!settings.mistralApiKey,
+        mistralKeyLength: settings.mistralApiKey?.length || 0
+      });
+      
       res.json(settings);
     } catch (error) {
+      console.error('[SETTINGS] Update failed:', error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }

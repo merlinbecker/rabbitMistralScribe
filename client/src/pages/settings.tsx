@@ -69,6 +69,13 @@ export default function Settings() {
     
     const updates: UpdateUserSettings = {};
     
+    console.log('[SETTINGS UI] Preparing to save:', {
+      hasApiKeyInput: !!apiKey,
+      apiKeyLength: apiKey.length,
+      hasSelectedRepo: !!selectedRepo,
+      hasSummaryTemplate: summaryTemplate !== ''
+    });
+    
     if (apiKey) updates.mistralApiKey = apiKey;
     if (repoData) {
       updates.githubRepoOwner = repoData[0];
@@ -77,6 +84,8 @@ export default function Settings() {
     if (summaryTemplate !== '') {
       updates.summaryTemplate = summaryTemplate;
     }
+    
+    console.log('[SETTINGS UI] Sending updates:', updates);
     
     updateSettingsMutation.mutate(updates);
   };
