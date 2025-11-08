@@ -199,10 +199,18 @@ export default function Home() {
 
   const saveRecordingLocally = async (audioBlob: Blob, duration: number) => {
     try {
+      console.log('[CLIENT] Starting recording upload:', {
+        blobSize: audioBlob.size,
+        blobType: audioBlob.type,
+        duration
+      });
+
       // Upload to backend
       const formData = new FormData();
       formData.append('audio', audioBlob);
       formData.append('duration', duration.toString());
+
+      console.log('[CLIENT] Sending POST request to /api/recordings');
 
       const response = await fetch('/api/recordings', {
         method: 'POST',
@@ -210,12 +218,16 @@ export default function Home() {
         body: formData,
       });
 
+      console.log('[CLIENT] Server response status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+        console.error('[CLIENT] Upload failed:', errorData);
         throw new Error(errorData.error || 'Failed to upload recording');
       }
 
       const recording = await response.json();
+      console.log('[CLIENT] Recording created:', recording.id);
 
       toast({
         title: 'Aufnahme gespeichert',
