@@ -57,7 +57,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).send('GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.');
     }
     
-    const redirectUri = `${process.env.REPL_HOME || 'http://localhost:5000'}/api/auth/github/callback`;
+    // Construct the correct redirect URI using the request protocol and host
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const redirectUri = `${protocol}://${host}/api/auth/github/callback`;
     const scope = 'repo,user';
     
     const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}`;
