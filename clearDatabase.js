@@ -7,8 +7,8 @@ async function clearDatabase() {
   console.log('🗑️  Starting database cleanup...');
   
   try {
-    // Get all keys - list() returns a promise that resolves to an array
-    const keys = await db.list("");
+    // Get all keys - list() without parameters returns all keys
+    const keys = await db.list();
     console.log(`📊 Found ${keys.length} keys in database`);
     
     if (keys.length === 0) {
