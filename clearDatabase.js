@@ -1,3 +1,4 @@
+
 import Database from "@replit/database";
 
 async function clearDatabase() {
