@@ -6,6 +6,8 @@ import { storage } from "./storage";
 import { ReplitSessionStore } from "./replitSessionStore";
 import { insertRecordingSchema, updateRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
 import { z } from "zod";
+import { JobQueue } from "./jobQueue";
+import { TranscriptionWorker } from "./transcriptionWorker";
 
 // Multer setup for file uploads
 const upload = multer({
@@ -57,6 +59,10 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Start background transcription worker
+  TranscriptionWorker.start();
+  console.log('[SERVER] 🚀 Background transcription worker started');
+
   // Serve service worker with correct MIME type
   app.get('/service-worker.js', (req, res) => {
     res.setHeader('Content-Type', 'application/javascript');
@@ -332,13 +338,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const duration = parseInt(req.body.duration || '0');
 
-      // Store audio file as base64 (in production, would use cloud storage)
+      // Store audio file as base64
       const audioBase64 = req.file.buffer.toString('base64');
       const audioUrl = `data:${req.file.mimetype};base64,${audioBase64}`;
 
       console.log('[UPLOAD] Audio encoded to base64, length:', audioBase64.length);
 
-      // Create recording entry with audio
+      // Create recording entry
       const recording = await storage.createRecording({
         userId: req.session.userId!,
         audioUrl,
@@ -351,243 +357,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('[UPLOAD] Recording created in DB:', recording.id);
 
-      // IMMEDIATELY trigger transcription BEFORE sending response
-      console.log('[UPLOAD] 🎯 Starting background transcription for:', recording.id);
-      
-      // Fire-and-forget: start transcription without blocking
-      Promise.resolve().then(() => {
-        console.log('[UPLOAD] 🔥 Promise.resolve().then() executing NOW');
-        return transcribeRecording(recording.id, req.session.userId!);
-      }).then(() => {
-        console.log('[UPLOAD] ✅ Background transcription completed for:', recording.id);
-      }).catch((err) => {
-        console.error('[UPLOAD] ❌ Background transcription failed for:', recording.id);
-        console.error('[UPLOAD] Error details:', err);
-        if (err instanceof Error) {
-          console.error('[UPLOAD] Error message:', err.message);
-          console.error('[UPLOAD] Error stack:', err.stack);
-        }
-      });
+      // Enqueue transcription job
+      const jobId = await JobQueue.enqueue(recording.id, req.session.userId!);
+      console.log('[UPLOAD] 📋 Transcription job enqueued:', jobId);
 
-      // Send response immediately (don't wait for transcription)
+      // Send response immediately
       res.json(recording);
     } catch (error) {
       console.error('[UPLOAD] Failed to create recording:', error);
       res.status(500).json({ error: 'Failed to create recording' });
     }
   });
-
-  // Background transcription function
-  async function transcribeRecording(recordingId: string, userId: string) {
-    try {
-      console.log('[TRANSCRIBE] Starting transcription for recording:', recordingId, 'userId:', userId);
-
-      // Add a small delay to ensure DB write has completed
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const recording = await storage.getRecording(recordingId);
-      console.log('[TRANSCRIBE] Raw recording object:', JSON.stringify(recording, null, 2));
-
-      if (!recording) {
-        console.error('[TRANSCRIBE] Recording not found:', recordingId);
-        await storage.updateRecording(recordingId, { status: 'failed' });
-        return;
-      }
-      console.log('[TRANSCRIBE] Recording loaded successfully:', {
-        id: recording.id,
-        status: recording.status,
-        hasAudio: !!recording.audioUrl,
-        audioUrlLength: recording.audioUrl?.length || 0,
-        userId: recording.userId
-      });
-
-      const settings = await storage.getUserSettings(userId);
-      console.log('[TRANSCRIBE] Settings loaded:', {
-        userId,
-        settingsFound: !!settings,
-        hasMistralKey: !!settings?.mistralApiKey,
-        mistralKeyLength: settings?.mistralApiKey?.length || 0
-      });
-
-      if (!settings?.mistralApiKey) {
-        console.error('[TRANSCRIBE] No Mistral API key configured for user:', userId);
-        await storage.updateRecording(recordingId, { status: 'failed' });
-        return;
-      }
-
-      console.log('[TRANSCRIBE] Settings loaded, updating status to transcribing');
-      await storage.updateRecording(recordingId, { status: 'transcribing' });
-
-      // Get audio data
-      if (!recording.audioUrl) {
-        console.error('[TRANSCRIBE] No audio URL in recording:', recordingId);
-        await storage.updateRecording(recordingId, { status: 'failed' });
-        return;
-      }
-
-      console.log('[TRANSCRIBE] Extracting audio data from URL');
-      const audioData = recording.audioUrl.split(',')[1];
-      const audioBuffer = Buffer.from(audioData, 'base64');
-
-      console.log('[TRANSCRIBE] Audio buffer created, size:', audioBuffer.length);
-
-      // Call Mistral Voxtral API
-      const mistralSTTModel = process.env.MISTRAL_STT_MODEL || 'voxtral-24.02';
-      const formData = new FormData();
-      const blob = new Blob([audioBuffer], { type: 'audio/webm' });
-      formData.append('file', blob, 'audio.webm');
-      formData.append('model', mistralSTTModel);
-
-      console.log('[TRANSCRIBE] Sending request to Mistral API:', {
-        blobSize: blob.size,
-        blobType: blob.type,
-        model: mistralSTTModel
-      });
-
-      const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.mistralApiKey}`,
-        },
-        body: formData,
-      });
-
-      console.log('[TRANSCRIBE] Mistral API response status:', transcriptionResponse.status);
-
-      if (!transcriptionResponse.ok) {
-        const errorText = await transcriptionResponse.text();
-        console.error('[TRANSCRIBE] Mistral API error response:', {
-          status: transcriptionResponse.status,
-          statusText: transcriptionResponse.statusText,
-          body: errorText
-        });
-        throw new Error(`Transcription failed: ${transcriptionResponse.statusText}`);
-      }
-
-      const transcriptionData = await transcriptionResponse.json();
-      const transcript = transcriptionData.text;
-
-      console.log('[TRANSCRIBE] Transcription successful, length:', transcript?.length || 0);
-
-      // Summarize with Mistral using custom template if available
-      const defaultTemplate = 'Du bist ein Assistent, der Audio-Notizen zusammenfasst. Erstelle eine strukturierte Zusammenfassung im Markdown-Format mit Hauptpunkten und wichtigen Details.';
-      const systemPrompt = settings.summaryTemplate || defaultTemplate;
-
-      console.log('[TRANSCRIBE] Starting summarization with template:', systemPrompt.substring(0, 50) + '...');
-
-      const summaryResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.mistralApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: `Bitte fasse diese Notiz zusammen:\n\n${transcript}`
-            }
-          ],
-        }),
-      });
-
-      console.log('[TRANSCRIBE] Summary API response status:', summaryResponse.status);
-
-      if (!summaryResponse.ok) {
-        const errorText = await summaryResponse.text();
-        console.error('[TRANSCRIBE] Summary API error:', {
-          status: summaryResponse.status,
-          statusText: summaryResponse.statusText,
-          body: errorText
-        });
-        throw new Error(`Summarization failed: ${summaryResponse.statusText}`);
-      }
-
-      const summaryData = await summaryResponse.json();
-      const summary = summaryData.choices[0].message.content;
-
-      console.log('[TRANSCRIBE] Summary successful, length:', summary?.length || 0);
-
-      // Generate title (one-line description)
-      console.log('[TRANSCRIBE] Generating title...');
-      const titleResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.mistralApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-          messages: [
-            {
-              role: 'system',
-              content: 'Du bist ein Assistent, der prägnante Titel erstellt. Erstelle einen einzeiligen Titel (maximal 60 Zeichen) der die Hauptidee zusammenfasst. Antworte nur mit dem Titel, ohne Anführungszeichen oder zusätzlichen Text.'
-            },
-            {
-              role: 'user',
-              content: `Erstelle einen kurzen Titel für diese Notiz:\n\n${transcript}`
-            }
-          ],
-        }),
-      });
-
-      console.log('[TRANSCRIBE] Title API response status:', titleResponse.status);
-
-      let title = 'Audio-Notiz';
-      if (titleResponse.ok) {
-        const titleData = await titleResponse.json();
-        title = titleData.choices[0].message.content.trim();
-        // Ensure title is not too long
-        if (title.length > 60) {
-          title = title.substring(0, 57) + '...';
-        }
-        console.log('[TRANSCRIBE] Title generated:', title);
-      } else {
-        console.error('[TRANSCRIBE] Title generation failed, using default');
-      }
-
-      // Update with results
-      await storage.updateRecording(recordingId, {
-        title,
-        transcript,
-        summary,
-        status: 'transcribed',
-      });
-
-      console.log('[TRANSCRIBE] Recording updated with title, transcript and summary');
-
-      // Save to GitHub if configured
-      if (settings.githubRepoOwner && settings.githubRepoName) {
-        console.log('[TRANSCRIBE] Saving to GitHub:', {
-          owner: settings.githubRepoOwner,
-          repo: settings.githubRepoName
-        });
-        await saveToGitHub(recordingId, userId);
-      } else {
-        console.log('[TRANSCRIBE] GitHub not configured, skipping save');
-      }
-
-      console.log('[TRANSCRIBE] Transcription process completed successfully for:', recordingId);
-    } catch (error) {
-      console.error('[TRANSCRIBE] Transcription error for recording:', recordingId);
-      console.error('[TRANSCRIBE] Error details:', error);
-      if (error instanceof Error) {
-        console.error('[TRANSCRIBE] Error message:', error.message);
-        console.error('[TRANSCRIBE] Error stack:', error.stack);
-      }
-      try {
-        await storage.updateRecording(recordingId, { status: 'failed' });
-        console.log('[TRANSCRIBE] Recording status set to failed:', recordingId);
-      } catch (updateError) {
-        console.error('[TRANSCRIBE] Failed to update recording status:', updateError);
-      }
-    }
-  }
 
   app.patch('/api/recordings/:id', requireAuth, async (req, res) => {
     try {
