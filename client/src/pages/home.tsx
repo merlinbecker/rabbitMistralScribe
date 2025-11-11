@@ -333,7 +333,7 @@ export default function Home() {
 
   const pollTranscriptionStatus = (recordingId: string, localId: string) => {
     let pollCount = 0;
-    const maxPolls = 40; // 2 minutes / 3 seconds
+    const maxPolls = 16; // 4 minutes / 15 seconds
     
     const pollInterval = setInterval(async () => {
       pollCount++;
@@ -373,7 +373,7 @@ export default function Home() {
       } catch (error) {
         console.error('[CLIENT] Error polling transcription status:', error);
       }
-    }, 3000);
+    }, 15000);
   };
 
   const syncPendingRecordings = async () => {
