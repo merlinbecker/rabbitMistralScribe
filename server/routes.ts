@@ -351,27 +351,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('[UPLOAD] Recording created in DB:', recording.id);
 
-      // Automatically trigger transcription in background
-      // Don't await - let it process asynchronously
-      console.log('[UPLOAD] About to start background transcription...');
-      console.log('[UPLOAD] Recording ID:', recording.id);
-      console.log('[UPLOAD] User ID:', req.session.userId);
-      console.log('[UPLOAD] transcribeRecording function exists:', typeof transcribeRecording === 'function');
-      
-      // Start transcription immediately
-      setImmediate(() => {
-        console.log('[UPLOAD] setImmediate: Starting transcription NOW');
-        transcribeRecording(recording.id, req.session.userId!).catch((err) => {
-          console.error('[UPLOAD] Background transcription failed for recording:', recording.id);
-          console.error('[UPLOAD] Error details:', err);
-          if (err instanceof Error) {
-            console.error('[UPLOAD] Error message:', err.message);
-            console.error('[UPLOAD] Error stack:', err.stack);
-          }
-        });
-      });
-
+      // Send response first
       res.json(recording);
+
+      // Automatically trigger transcription in background
+      // Start immediately after response is sent
+      console.log('[UPLOAD] Starting background transcription for recording:', recording.id);
+      
+      // Use Promise to ensure async execution doesn't block
+      Promise.resolve().then(() => {
+        console.log('[UPLOAD] Promise resolved, calling transcribeRecording NOW');
+        return transcribeRecording(recording.id, req.session.userId!);
+      }).catch((err) => {
+        console.error('[UPLOAD] Background transcription failed for recording:', recording.id);
+        console.error('[UPLOAD] Error details:', err);
+        if (err instanceof Error) {
+          console.error('[UPLOAD] Error message:', err.message);
+          console.error('[UPLOAD] Error stack:', err.stack);
+        }
+      });
     } catch (error) {
       console.error('[UPLOAD] Failed to create recording:', error);
       res.status(500).json({ error: 'Failed to create recording' });
