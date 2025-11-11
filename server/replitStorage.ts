@@ -45,13 +45,13 @@ export class ReplitStorage implements IStorage {
     console.log('[REPLIT_STORAGE] Looking up user by GitHub ID:', githubId);
     const userId = await this.db.get(this.userGithubKey(githubId));
     console.log('[REPLIT_STORAGE] Found userId for GitHub ID:', { githubId, userId });
-    
+
     // Check if userId is valid (not an error object)
     if (!userId || (typeof userId === 'object' && 'ok' in userId && !userId.ok)) {
       console.log('[REPLIT_STORAGE] No valid userId found for GitHub ID:', githubId);
       return undefined;
     }
-    
+
     const user = await this.getUser(userId as string);
     console.log('[REPLIT_STORAGE] Retrieved user:', { id: user?.id, username: user?.username });
     return user;
@@ -99,27 +99,47 @@ export class ReplitStorage implements IStorage {
 
   // User settings methods
   async getUserSettings(userId: string): Promise<UserSettings | undefined> {
-    try {
-      const settings = await this.db.get(this.settingsKey(userId));
+    console.log('[REPLIT_STORAGE] getUserSettings called for userId:', userId);
+    const key = `user_settings:${userId}`;
+    const data = await this.db.get(key);
 
-      console.log('[REPLIT_STORAGE] getUserSettings called for userId:', userId);
-      
-      // Check if settings is valid (not an error object)
-      if (!settings || (typeof settings === 'object' && 'ok' in settings && !settings.ok)) {
-        console.log('[REPLIT_STORAGE] No valid settings found for userId:', userId);
-        return undefined;
+    if (!data) {
+      console.log('[REPLIT_STORAGE] Settings not found for userId:', userId);
+      return undefined;
+    }
+
+    try {
+      // Unwrap Replit DB response if needed - DOUBLE unwrap!
+      let unwrappedData = data;
+
+      // First unwrap
+      if (typeof data === 'object' && 'ok' in data && 'value' in data) {
+        console.log('[REPLIT_STORAGE] First unwrap - Replit DB response object');
+        unwrappedData = data.value;
       }
-      
-      console.log('[REPLIT_STORAGE] Found settings:', {
+
+      // Second unwrap: might still be wrapped
+      if (typeof unwrappedData === 'object' && 'ok' in unwrappedData && 'value' in unwrappedData) {
+        console.log('[REPLIT_STORAGE] Second unwrap - nested Replit DB response object');
+        unwrappedData = unwrappedData.value;
+      }
+
+      // Parse if still string
+      const settings = typeof unwrappedData === 'string'
+        ? JSON.parse(unwrappedData)
+        : unwrappedData;
+
+      console.log('[REPLIT_STORAGE] Parsed settings object:', {
         id: settings.id,
         userId: settings.userId,
         hasMistralKey: !!settings.mistralApiKey,
-        mistralKeyLength: settings.mistralApiKey?.length || 0
+        mistralKeyLength: settings.mistralApiKey?.length || 0,
+        allKeys: Object.keys(settings)
       });
 
       return settings;
     } catch (error) {
-      console.error('[REPLIT_STORAGE] Error getting user settings:', error);
+      console.error('[REPLIT_STORAGE] Error parsing settings:', error);
       return undefined;
     }
   }
@@ -191,15 +211,57 @@ export class ReplitStorage implements IStorage {
 
   // Recording methods
   async getRecording(id: string): Promise<Recording | undefined> {
+    console.log('[REPLIT_STORAGE] getRecording called for id:', id);
+    const key = `recording:${id}`;
+    const data = await this.db.get(key);
+    console.log('[REPLIT_STORAGE] Raw data from DB:', {
+      exists: !!data,
+      type: typeof data,
+      isString: typeof data === 'string',
+      isObject: typeof data === 'object',
+      hasOkField: data && typeof data === 'object' && 'ok' in data,
+      hasValueField: data && typeof data === 'object' && 'value' in data,
+      rawDataPreview: typeof data === 'string' ? data.substring(0, 100) : JSON.stringify(data).substring(0, 100)
+    });
+
+    if (!data) {
+      console.log('[REPLIT_STORAGE] Recording not found:', id);
+      return undefined;
+    }
+
     try {
-      const recording = await this.db.get(this.recordingKey(id));
-      // Check if recording is valid (not an error object)
-      if (!recording || (typeof recording === 'object' && 'ok' in recording && !recording.ok)) {
-        return undefined;
+      // Unwrap Replit DB response if needed - DOUBLE unwrap!
+      let unwrappedData = data;
+
+      // First unwrap: {ok: true, value: {ok: true, value: "..."}}
+      if (typeof data === 'object' && 'ok' in data && 'value' in data) {
+        console.log('[REPLIT_STORAGE] First unwrap - Replit DB response object');
+        unwrappedData = data.value;
       }
+
+      // Second unwrap: might still be wrapped
+      if (typeof unwrappedData === 'object' && 'ok' in unwrappedData && 'value' in unwrappedData) {
+        console.log('[REPLIT_STORAGE] Second unwrap - nested Replit DB response object');
+        unwrappedData = unwrappedData.value;
+      }
+
+      // Parse if still string
+      const recording = typeof unwrappedData === 'string'
+        ? JSON.parse(unwrappedData)
+        : unwrappedData;
+
+      console.log('[REPLIT_STORAGE] Parsed recording object:', {
+        id: recording.id,
+        userId: recording.userId,
+        status: recording.status,
+        hasAudio: !!recording.audioUrl,
+        audioLength: recording.audioUrl?.length || 0,
+        allKeys: Object.keys(recording)
+      });
+
       return recording;
     } catch (error) {
-      console.error('[REPLIT_STORAGE] Error getting recording:', error);
+      console.error('[REPLIT_STORAGE] Error parsing recording:', error);
       return undefined;
     }
   }
@@ -207,7 +269,7 @@ export class ReplitStorage implements IStorage {
   async getRecordingsByUserId(userId: string): Promise<Recording[]> {
     try {
       const recordingIdsData = await this.db.get(this.userRecordingsKey(userId));
-      
+
       // Check if recordingIdsData is valid and unwrap if needed
       let recordingIds: string[] = [];
       if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
@@ -220,7 +282,7 @@ export class ReplitStorage implements IStorage {
         // No data or error
         return [];
       }
-      
+
       const recordings: Recording[] = [];
 
       for (const id of recordingIds) {
@@ -262,7 +324,7 @@ export class ReplitStorage implements IStorage {
       // Add to user's recordings list
       const userRecordingsKey = this.userRecordingsKey(insertRecording.userId);
       const recordingIdsData = await this.db.get(userRecordingsKey);
-      
+
       // Check if recordingIdsData is valid and unwrap if needed
       let recordingIds: string[] = [];
       if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
@@ -272,7 +334,7 @@ export class ReplitStorage implements IStorage {
         // Direct array response
         recordingIds = recordingIdsData;
       }
-      
+
       recordingIds.push(id);
       await this.db.set(userRecordingsKey, recordingIds);
 
@@ -314,7 +376,7 @@ export class ReplitStorage implements IStorage {
       // Remove from user's recordings list
       const userRecordingsKey = this.userRecordingsKey(recording.userId);
       const recordingIdsData = await this.db.get(userRecordingsKey);
-      
+
       // Check if recordingIdsData is valid and unwrap if needed
       let recordingIds: string[] = [];
       if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
@@ -324,7 +386,7 @@ export class ReplitStorage implements IStorage {
         // Direct array response
         recordingIds = recordingIdsData;
       }
-      
+
       const updatedIds = recordingIds.filter((rid: string) => rid !== id);
       await this.db.set(userRecordingsKey, updatedIds);
 
