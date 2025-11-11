@@ -1,0 +1,67 @@
+service-worker.js:87 Syncing recordings...
+service-worker.js:87 Syncing recordings...
+service-worker.js:87 Syncing recordings...
+registerServiceWorker.ts:12 Service Worker registered successfully: https://56412a04-d353-4ff9-bd98-17d4c0c24ddc-00-2jcpld1vtmuac.kirk.replit.dev/
+registerServiceWorker.ts:22 Background sync registered
+service-worker.js:87 Syncing recordings...
+manifest.json:1  Manifest: Line: 1, column: 1, Syntax error.
+home.tsx:455 [SYNC] Found 20 pending recordings
+home.tsx:241 [CLIENT] ========================================
+home.tsx:242 [CLIENT] stopRecording() called
+home.tsx:243 [CLIENT] isRecording: true
+home.tsx:244 [CLIENT] mediaRecorder exists: true
+home.tsx:245 [CLIENT] ========================================
+home.tsx:248 [CLIENT] Stopping MediaRecorder...
+home.tsx:251 [CLIENT] MediaRecorder stopped, onstop event should fire
+home.tsx:191 [CLIENT] ========================================
+home.tsx:192 [CLIENT] MediaRecorder onstop event fired
+home.tsx:193 [CLIENT] Audio chunks collected: 21
+home.tsx:194 [CLIENT] Recording time: 0
+home.tsx:195 [CLIENT] ========================================
+home.tsx:198 [CLIENT] Audio Blob created: Object
+home.tsx:204 [CLIENT] Calling saveRecordingLocally...
+home.tsx:264 [CLIENT] ========================================
+home.tsx:265 [CLIENT] saveRecordingLocally() called
+home.tsx:266 [CLIENT] Blob size: 39103
+home.tsx:267 [CLIENT] Duration: 0
+home.tsx:268 [CLIENT] ========================================
+home.tsx:271 [CLIENT] Generated recording ID: 879cfeae-e2dc-409d-b10b-91a128d9859e
+home.tsx:275 [CLIENT] Saving to IndexedDB...
+home.tsx:284 [CLIENT] ✅ Recording saved to IndexedDB: 879cfeae-e2dc-409d-b10b-91a128d9859e
+home.tsx:287 [CLIENT] Checking network status...
+home.tsx:288 [CLIENT] navigator.onLine: true
+home.tsx:291 [CLIENT] ========================================
+home.tsx:292 [CLIENT] Network is online - starting upload
+home.tsx:293 [CLIENT] ========================================
+home.tsx:318 [CLIENT] ========================================
+home.tsx:319 [CLIENT] uploadRecording() called
+home.tsx:320 [CLIENT] Local ID: 879cfeae-e2dc-409d-b10b-91a128d9859e
+home.tsx:321 [CLIENT] Timestamp: 2025-11-11T17:02:06.350Z
+home.tsx:322 [CLIENT] ========================================
+home.tsx:326 [CLIENT] Updating IndexedDB status to uploading...
+home.tsx:328 [CLIENT] ✅ IndexedDB status updated
+home.tsx:330 [CLIENT] Recording upload details: Object
+home.tsx:337 [CLIENT] Creating FormData...
+home.tsx:341 [CLIENT] ✅ FormData created
+home.tsx:343 [CLIENT] ========================================
+home.tsx:344 [CLIENT] 🚀 SENDING FETCH REQUEST TO /api/recordings
+home.tsx:345 [CLIENT] Method: POST
+home.tsx:346 [CLIENT] Credentials: include
+home.tsx:347 [CLIENT] Body: FormData with audio and duration
+home.tsx:348 [CLIENT] ========================================
+home.tsx:356 [CLIENT] ========================================
+home.tsx:357 [CLIENT] 📥 FETCH RESPONSE RECEIVED
+home.tsx:358 [CLIENT] Status: 200
+home.tsx:359 [CLIENT] Status Text: OK
+home.tsx:360 [CLIENT] OK: true
+home.tsx:361 [CLIENT] ========================================
+home.tsx:374 [CLIENT] Recording uploaded: 25f5f2ee-0830-4308-a9f6-a96847cbf646
+home.tsx:206 [CLIENT] saveRecordingLocally completed
+home.tsx:217 [CLIENT] ========================================
+home.tsx:218 [CLIENT] onstop cleanup completed
+home.tsx:219 [CLIENT] ========================================
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
