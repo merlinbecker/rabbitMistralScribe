@@ -351,25 +351,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('[UPLOAD] Recording created in DB:', recording.id);
 
-      // Send response first
-      res.json(recording);
-
-      // Automatically trigger transcription in background
-      // Start immediately after response is sent
+      // Automatically trigger transcription in background BEFORE sending response
+      // This ensures the background process starts
       console.log('[UPLOAD] Starting background transcription for recording:', recording.id);
 
-      // Use Promise to ensure async execution doesn't block
-      Promise.resolve().then(() => {
-        console.log('[UPLOAD] Promise resolved, calling transcribeRecording NOW');
-        return transcribeRecording(recording.id, req.session.userId!);
-      }).catch((err) => {
-        console.error('[UPLOAD] Background transcription failed for recording:', recording.id);
-        console.error('[UPLOAD] Error details:', err);
-        if (err instanceof Error) {
-          console.error('[UPLOAD] Error message:', err.message);
-          console.error('[UPLOAD] Error stack:', err.stack);
-        }
+      // Use setImmediate to ensure it runs in next event loop tick
+      setImmediate(() => {
+        console.log('[UPLOAD] setImmediate: Starting transcription NOW');
+        transcribeRecording(recording.id, req.session.userId!).catch((err) => {
+          console.error('[UPLOAD] Background transcription failed for recording:', recording.id);
+          console.error('[UPLOAD] Error details:', err);
+          if (err instanceof Error) {
+            console.error('[UPLOAD] Error message:', err.message);
+            console.error('[UPLOAD] Error stack:', err.stack);
+          }
+        });
       });
+
+      // Send response
+      res.json(recording);
     } catch (error) {
       console.error('[UPLOAD] Failed to create recording:', error);
       res.status(500).json({ error: 'Failed to create recording' });
