@@ -30,7 +30,11 @@ export class ReplitStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     try {
       const user = await this.db.get(this.userKey(id));
-      return user || undefined;
+      // Replit DB returns {ok: false, error: ...} for missing keys
+      if (!user || (typeof user === 'object' && 'ok' in user && !user.ok)) {
+        return undefined;
+      }
+      return user;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error getting user:', error);
       return undefined;
@@ -41,8 +45,14 @@ export class ReplitStorage implements IStorage {
     console.log('[REPLIT_STORAGE] Looking up user by GitHub ID:', githubId);
     const userId = await this.db.get(this.userGithubKey(githubId));
     console.log('[REPLIT_STORAGE] Found userId for GitHub ID:', { githubId, userId });
-    if (!userId) return undefined;
-    const user = await this.getUser(userId);
+    
+    // Check if userId is valid (not an error object)
+    if (!userId || (typeof userId === 'object' && 'ok' in userId && !userId.ok)) {
+      console.log('[REPLIT_STORAGE] No valid userId found for GitHub ID:', githubId);
+      return undefined;
+    }
+    
+    const user = await this.getUser(userId as string);
     console.log('[REPLIT_STORAGE] Retrieved user:', { id: user?.id, username: user?.username });
     return user;
   }
@@ -93,14 +103,21 @@ export class ReplitStorage implements IStorage {
       const settings = await this.db.get(this.settingsKey(userId));
 
       console.log('[REPLIT_STORAGE] getUserSettings called for userId:', userId);
-      console.log('[REPLIT_STORAGE] Found settings:', settings ? {
+      
+      // Check if settings is valid (not an error object)
+      if (!settings || (typeof settings === 'object' && 'ok' in settings && !settings.ok)) {
+        console.log('[REPLIT_STORAGE] No valid settings found for userId:', userId);
+        return undefined;
+      }
+      
+      console.log('[REPLIT_STORAGE] Found settings:', {
         id: settings.id,
         userId: settings.userId,
         hasMistralKey: !!settings.mistralApiKey,
         mistralKeyLength: settings.mistralApiKey?.length || 0
-      } : 'NOT FOUND');
+      });
 
-      return settings || undefined;
+      return settings;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error getting user settings:', error);
       return undefined;
@@ -176,7 +193,11 @@ export class ReplitStorage implements IStorage {
   async getRecording(id: string): Promise<Recording | undefined> {
     try {
       const recording = await this.db.get(this.recordingKey(id));
-      return recording || undefined;
+      // Check if recording is valid (not an error object)
+      if (!recording || (typeof recording === 'object' && 'ok' in recording && !recording.ok)) {
+        return undefined;
+      }
+      return recording;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error getting recording:', error);
       return undefined;
@@ -185,7 +206,13 @@ export class ReplitStorage implements IStorage {
 
   async getRecordingsByUserId(userId: string): Promise<Recording[]> {
     try {
-      const recordingIds = await this.db.get(this.userRecordingsKey(userId)) || [];
+      const recordingIds = await this.db.get(this.userRecordingsKey(userId));
+      
+      // Check if recordingIds is valid (not an error object)
+      if (!recordingIds || (typeof recordingIds === 'object' && 'ok' in recordingIds && !recordingIds.ok)) {
+        return [];
+      }
+      
       const recordings: Recording[] = [];
 
       for (const id of recordingIds) {
