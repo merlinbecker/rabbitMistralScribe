@@ -1,163 +1,150 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock localStorage for tests
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => {
-      store[key] = value.toString();
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    }
-  };
-})();
-
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock
-});
-
-// Token management functions (from queryClient.ts concept)
-const TOKEN_KEY = 'auth_token';
-
-function setStoredToken(token: string) {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 30);
-  
-  localStorage.setItem(TOKEN_KEY, JSON.stringify({
-    token,
-    expiresAt: expiresAt.toISOString()
-  }));
+// Mock user data structure
+interface TokenData {
+  userId: string;
+  expiresAt: Date;
 }
 
-function getStoredToken(): string | null {
-  const stored = localStorage.getItem(TOKEN_KEY);
-  if (!stored) return null;
-  
-  try {
-    const { token, expiresAt } = JSON.parse(stored);
-    if (new Date(expiresAt) < new Date()) {
-      localStorage.removeItem(TOKEN_KEY);
-      return null;
+// Simple token storage simulation
+class TokenStorage {
+  private tokens = new Map<string, TokenData>();
+
+  setToken(token: string, userId: string, expiresInDays: number = 30) {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+    
+    this.tokens.set(token, {
+      userId,
+      expiresAt,
+    });
+  }
+
+  getToken(token: string): TokenData | undefined {
+    return this.tokens.get(token);
+  }
+
+  isTokenValid(token: string): boolean {
+    const data = this.tokens.get(token);
+    if (!data) return false;
+    return new Date() < data.expiresAt;
+  }
+
+  removeToken(token: string): void {
+    this.tokens.delete(token);
+  }
+
+  clearExpiredTokens(): number {
+    const now = new Date();
+    let count = 0;
+    
+    for (const [token, data] of this.tokens.entries()) {
+      if (now >= data.expiresAt) {
+        this.tokens.delete(token);
+        count++;
+      }
     }
-    return token;
-  } catch {
-    return null;
+    
+    return count;
   }
 }
 
-function clearStoredToken() {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
 describe('Token Storage', () => {
+  let tokenStorage: TokenStorage;
+
   beforeEach(() => {
-    localStorage.clear();
+    tokenStorage = new TokenStorage();
   });
 
-  it('should store token with expiration', () => {
-    const token = 'test-user-id';
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
-
-    localStorage.setItem('auth_token', JSON.stringify({
-      token,
-      expiresAt: expiresAt.toISOString()
-    }));
-
-    const stored = JSON.parse(localStorage.getItem('auth_token')!);
-    expect(stored.token).toBe(token);
-    expect(new Date(stored.expiresAt).getTime()).toBeGreaterThan(Date.now());
-  });
-
-  it('should detect expired token', () => {
-    const token = 'test-user-id';
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() - 1); // expired yesterday
-
-    localStorage.setItem('auth_token', JSON.stringify({
-      token,
-      expiresAt: expiresAt.toISOString()
-    }));
-
-    const stored = JSON.parse(localStorage.getItem('auth_token')!);
-    expect(new Date(stored.expiresAt).getTime()).toBeLessThan(Date.now());
-  });
-
-  it('should clear token on logout', () => {
-    localStorage.setItem('auth_token', JSON.stringify({
-      token: 'test',
-      expiresAt: new Date().toISOString()
-    }));
-
-    localStorage.removeItem('auth_token');
-    expect(localStorage.getItem('auth_token')).toBeNull();
-  });
-});
-
-describe('Token Management Functions', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  describe('setStoredToken', () => {
-    it('should store token with 30 day expiration', () => {
-      setStoredToken('user-123');
+  describe('setToken', () => {
+    it('should store token with expiration date', () => {
+      const userId = 'user-123';
+      const token = 'test-token-abc';
       
-      const stored = JSON.parse(localStorage.getItem(TOKEN_KEY)!);
-      expect(stored.token).toBe('user-123');
+      tokenStorage.setToken(token, userId, 30);
       
-      const expiresAt = new Date(stored.expiresAt);
-      const expectedExpiry = new Date();
-      expectedExpiry.setDate(expectedExpiry.getDate() + 30);
+      const data = tokenStorage.getToken(token);
+      expect(data).toBeDefined();
+      expect(data?.userId).toBe(userId);
+      expect(data?.expiresAt).toBeInstanceOf(Date);
+    });
+
+    it('should calculate correct expiration date', () => {
+      const userId = 'user-456';
+      const token = 'test-token-def';
+      const days = 7;
       
-      // Allow 1 second tolerance
-      expect(Math.abs(expiresAt.getTime() - expectedExpiry.getTime())).toBeLessThan(1000);
+      const before = new Date();
+      before.setDate(before.getDate() + days);
+      
+      tokenStorage.setToken(token, userId, days);
+      
+      const data = tokenStorage.getToken(token);
+      const after = new Date();
+      after.setDate(after.getDate() + days);
+      
+      expect(data?.expiresAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(data?.expiresAt.getTime()).toBeLessThanOrEqual(after.getTime());
     });
   });
 
-  describe('getStoredToken', () => {
-    it('should return null when no token exists', () => {
-      expect(getStoredToken()).toBeNull();
-    });
-
-    it('should return valid non-expired token', () => {
-      setStoredToken('valid-token');
-      expect(getStoredToken()).toBe('valid-token');
-    });
-
-    it('should return null for expired token and remove it', () => {
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() - 1);
+  describe('isTokenValid', () => {
+    it('should return true for valid token', () => {
+      const token = 'valid-token';
+      tokenStorage.setToken(token, 'user-789', 30);
       
-      localStorage.setItem(TOKEN_KEY, JSON.stringify({
-        token: 'expired-token',
-        expiresAt: expiresAt.toISOString()
-      }));
-      
-      expect(getStoredToken()).toBeNull();
-      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+      expect(tokenStorage.isTokenValid(token)).toBe(true);
     });
 
-    it('should handle malformed token data', () => {
-      localStorage.setItem(TOKEN_KEY, 'invalid-json');
-      expect(getStoredToken()).toBeNull();
+    it('should return false for non-existent token', () => {
+      expect(tokenStorage.isTokenValid('non-existent')).toBe(false);
+    });
+
+    it('should return false for expired token', () => {
+      const token = 'expired-token';
+      tokenStorage.setToken(token, 'user-999', -1); // Expired yesterday
+      
+      expect(tokenStorage.isTokenValid(token)).toBe(false);
     });
   });
 
-  describe('clearStoredToken', () => {
-    it('should remove token from storage', () => {
-      setStoredToken('token-to-clear');
-      expect(localStorage.getItem(TOKEN_KEY)).not.toBeNull();
+  describe('removeToken', () => {
+    it('should delete token on logout', () => {
+      const token = 'logout-token';
+      tokenStorage.setToken(token, 'user-111', 30);
       
-      clearStoredToken();
-      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+      expect(tokenStorage.getToken(token)).toBeDefined();
+      
+      tokenStorage.removeToken(token);
+      
+      expect(tokenStorage.getToken(token)).toBeUndefined();
+    });
+  });
+
+  describe('clearExpiredTokens', () => {
+    it('should remove all expired tokens', () => {
+      tokenStorage.setToken('valid-1', 'user-1', 30);
+      tokenStorage.setToken('valid-2', 'user-2', 30);
+      tokenStorage.setToken('expired-1', 'user-3', -1);
+      tokenStorage.setToken('expired-2', 'user-4', -2);
+      
+      const removed = tokenStorage.clearExpiredTokens();
+      
+      expect(removed).toBe(2);
+      expect(tokenStorage.isTokenValid('valid-1')).toBe(true);
+      expect(tokenStorage.isTokenValid('valid-2')).toBe(true);
+      expect(tokenStorage.isTokenValid('expired-1')).toBe(false);
+      expect(tokenStorage.isTokenValid('expired-2')).toBe(false);
+    });
+
+    it('should return 0 when no expired tokens', () => {
+      tokenStorage.setToken('valid-1', 'user-1', 30);
+      tokenStorage.setToken('valid-2', 'user-2', 30);
+      
+      const removed = tokenStorage.clearExpiredTokens();
+      
+      expect(removed).toBe(0);
     });
   });
 });

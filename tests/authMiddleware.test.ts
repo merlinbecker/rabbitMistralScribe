@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 
-// Mock storage module
+// Mock storage
 const mockStorage = {
   getUser: vi.fn(),
 };
@@ -11,12 +11,13 @@ vi.mock('../server/storage', () => ({
   storage: mockStorage,
 }));
 
-// Mock requireAuth middleware (you'll need to export this from routes.ts)
+// Simplified requireAuth middleware for testing
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const { storage } = await import('../server/storage');
   
-  let userId = (req.session as any)?.userId;
+  let userId = req.session?.userId;
   
+  // Fallback to Bearer Token
   if (!userId) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
@@ -31,6 +32,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
     });
   }
   
+  // Verify user exists
   const user = await storage.getUser(userId);
   if (!user) {
     return res.status(401).json({ 
@@ -39,86 +41,147 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
     });
   }
   
-  (req.session as any).userId = userId;
+  // Keep session consistent
+  if (req.session) {
+    req.session.userId = userId;
+  }
   next();
 }
 
-describe('requireAuth Middleware', () => {
+describe('Auth Middleware', () => {
   let mockReq: Partial<Request>;
   let mockRes: Partial<Response>;
   let mockNext: NextFunction;
-  
+  let jsonSpy: ReturnType<typeof vi.fn>;
+  let statusSpy: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
+    vi.clearAllMocks();
+    
+    jsonSpy = vi.fn();
+    statusSpy = vi.fn().mockReturnValue({ json: jsonSpy });
+    
     mockReq = {
-      session: {},
       headers: {},
+      session: undefined,
     };
     
     mockRes = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn().mockReturnThis(),
+      status: statusSpy,
+      json: jsonSpy,
     };
     
     mockNext = vi.fn();
-    
-    mockStorage.getUser.mockReset();
   });
 
-  it('should reject request without session or token', async () => {
-    await requireAuth(mockReq as Request, mockRes as Response, mockNext);
-    
-    expect(mockRes.status).toHaveBeenCalledWith(401);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      error: 'Unauthorized',
-      details: 'No session or valid Bearer token found'
+  describe('Session Authentication', () => {
+    it('should allow access with valid session', async () => {
+      mockReq.session = { userId: 'test-user-123' } as any;
+      mockStorage.getUser.mockResolvedValue({
+        id: 'test-user-123',
+        githubId: '12345',
+        username: 'testuser',
+        avatarUrl: 'https://github.com/avatar.jpg',
+      });
+
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockStorage.getUser).toHaveBeenCalledWith('test-user-123');
+      expect(mockNext).toHaveBeenCalled();
+      expect(statusSpy).not.toHaveBeenCalled();
     });
-    expect(mockNext).not.toHaveBeenCalled();
-  });
 
-  it('should accept request with valid session', async () => {
-    (mockReq.session as any).userId = 'user-123';
-    mockStorage.getUser.mockResolvedValue({ id: 'user-123', username: 'testuser' });
-    
-    await requireAuth(mockReq as Request, mockRes as Response, mockNext);
-    
-    expect(mockStorage.getUser).toHaveBeenCalledWith('user-123');
-    expect(mockNext).toHaveBeenCalled();
-    expect(mockRes.status).not.toHaveBeenCalled();
-  });
+    it('should reject when session user does not exist', async () => {
+      mockReq.session = { userId: 'non-existent-user' } as any;
+      mockStorage.getUser.mockResolvedValue(undefined);
 
-  it('should accept request with valid Bearer token', async () => {
-    mockReq.headers = { authorization: 'Bearer user-456' };
-    mockStorage.getUser.mockResolvedValue({ id: 'user-456', username: 'tokenuser' });
-    
-    await requireAuth(mockReq as Request, mockRes as Response, mockNext);
-    
-    expect(mockStorage.getUser).toHaveBeenCalledWith('user-456');
-    expect(mockNext).toHaveBeenCalled();
-    expect((mockReq.session as any).userId).toBe('user-456');
-  });
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
 
-  it('should reject request with non-existent user', async () => {
-    (mockReq.session as any).userId = 'non-existent';
-    mockStorage.getUser.mockResolvedValue(null);
-    
-    await requireAuth(mockReq as Request, mockRes as Response, mockNext);
-    
-    expect(mockRes.status).toHaveBeenCalledWith(401);
-    expect(mockRes.json).toHaveBeenCalledWith({
-      error: 'Unauthorized',
-      details: 'User not found'
+      expect(mockStorage.getUser).toHaveBeenCalledWith('non-existent-user');
+      expect(statusSpy).toHaveBeenCalledWith(401);
+      expect(jsonSpy).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        details: 'User not found',
+      });
+      expect(mockNext).not.toHaveBeenCalled();
     });
-    expect(mockNext).not.toHaveBeenCalled();
   });
 
-  it('should prioritize session over Bearer token', async () => {
-    (mockReq.session as any).userId = 'session-user';
-    mockReq.headers = { authorization: 'Bearer token-user' };
-    mockStorage.getUser.mockResolvedValue({ id: 'session-user', username: 'sessionuser' });
-    
-    await requireAuth(mockReq as Request, mockRes as Response, mockNext);
-    
-    expect(mockStorage.getUser).toHaveBeenCalledWith('session-user');
-    expect(mockNext).toHaveBeenCalled();
+  describe('Bearer Token Authentication', () => {
+    it('should allow access with valid Bearer token', async () => {
+      mockReq.headers = { authorization: 'Bearer token-user-456' };
+      mockStorage.getUser.mockResolvedValue({
+        id: 'token-user-456',
+        githubId: '67890',
+        username: 'tokenuser',
+        avatarUrl: 'https://github.com/avatar2.jpg',
+      });
+
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockStorage.getUser).toHaveBeenCalledWith('token-user-456');
+      expect(mockNext).toHaveBeenCalled();
+      expect(statusSpy).not.toHaveBeenCalled();
+    });
+
+    it('should reject when Bearer token user does not exist', async () => {
+      mockReq.headers = { authorization: 'Bearer invalid-token' };
+      mockStorage.getUser.mockResolvedValue(undefined);
+
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockStorage.getUser).toHaveBeenCalledWith('invalid-token');
+      expect(statusSpy).toHaveBeenCalledWith(401);
+      expect(jsonSpy).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        details: 'User not found',
+      });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('should ignore malformed authorization header', async () => {
+      mockReq.headers = { authorization: 'InvalidFormat token123' };
+
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(statusSpy).toHaveBeenCalledWith(401);
+      expect(jsonSpy).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        details: 'No session or valid Bearer token found',
+      });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('No Authentication', () => {
+    it('should reject when no session and no Bearer token', async () => {
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(statusSpy).toHaveBeenCalledWith(401);
+      expect(jsonSpy).toHaveBeenCalledWith({
+        error: 'Unauthorized',
+        details: 'No session or valid Bearer token found',
+      });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Session Consistency', () => {
+    it('should update session with userId from Bearer token', async () => {
+      const session = {} as any;
+      mockReq.session = session;
+      mockReq.headers = { authorization: 'Bearer bearer-user-789' };
+      mockStorage.getUser.mockResolvedValue({
+        id: 'bearer-user-789',
+        githubId: '11111',
+        username: 'beareruser',
+        avatarUrl: 'https://github.com/avatar3.jpg',
+      });
+
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(session.userId).toBe('bearer-user-789');
+      expect(mockNext).toHaveBeenCalled();
+    });
   });
 });

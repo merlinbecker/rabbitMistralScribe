@@ -136,4 +136,170 @@ describe('ReplitSessionStore', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('touch', () => {
+    it('should update session to prevent expiration', async () => {
+      const sessionData: SessionData = {
+        cookie: {
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: '/',
+        },
+        userId: 'test-user-touch',
+      };
+      
+      await new Promise<void>((resolve) => {
+        store.set('touch-sid', sessionData, () => resolve());
+      });
+      
+      const updatedSessionData: SessionData = {
+        ...sessionData,
+        cookie: {
+          ...sessionData.cookie,
+          expires: new Date(Date.now() + 172800000), // 2 days
+        },
+      };
+      
+      await new Promise<void>((resolve) => {
+        store.touch('touch-sid', updatedSessionData, () => resolve());
+      });
+      
+      const result = await new Promise<SessionData | null>((resolve) => {
+        store.get('touch-sid', (err, session) => {
+          resolve(session || null);
+        });
+      });
+      
+      expect(result).toEqual(updatedSessionData);
+    });
+  });
+
+  describe('all', () => {
+    it('should retrieve all sessions', async () => {
+      const session1: SessionData = {
+        cookie: {
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: '/',
+        },
+        userId: 'user-1',
+      };
+      
+      const session2: SessionData = {
+        cookie: {
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: '/',
+        },
+        userId: 'user-2',
+      };
+      
+      await new Promise<void>((resolve) => {
+        store.set('sid-1', session1, () => resolve());
+      });
+      
+      await new Promise<void>((resolve) => {
+        store.set('sid-2', session2, () => resolve());
+      });
+      
+      const result = await new Promise<{ [sid: string]: SessionData } | null>((resolve) => {
+        store.all((err, sessions) => {
+          expect(err).toBeNull();
+          resolve(sessions as { [sid: string]: SessionData } || null);
+        });
+      });
+      
+      expect(result).toBeDefined();
+      expect(result?.['sid-1']).toEqual(session1);
+      expect(result?.['sid-2']).toEqual(session2);
+    });
+  });
+
+  describe('length', () => {
+    it('should return the count of sessions', async () => {
+      const session1: SessionData = {
+        cookie: {
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: '/',
+        },
+        userId: 'user-count-1',
+      };
+      
+      const session2: SessionData = {
+        cookie: {
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: '/',
+        },
+        userId: 'user-count-2',
+      };
+      
+      await new Promise<void>((resolve) => {
+        store.set('count-sid-1', session1, () => resolve());
+      });
+      
+      await new Promise<void>((resolve) => {
+        store.set('count-sid-2', session2, () => resolve());
+      });
+      
+      const length = await new Promise<number>((resolve) => {
+        store.length((err, count) => {
+          expect(err).toBeNull();
+          resolve(count || 0);
+        });
+      });
+      
+      expect(length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('clear', () => {
+    it('should remove all sessions', async () => {
+      const session1: SessionData = {
+        cookie: {
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: '/',
+        },
+        userId: 'user-clear-1',
+      };
+      
+      const session2: SessionData = {
+        cookie: {
+          originalMaxAge: 86400000,
+          expires: new Date(Date.now() + 86400000),
+          httpOnly: true,
+          path: '/',
+        },
+        userId: 'user-clear-2',
+      };
+      
+      await new Promise<void>((resolve) => {
+        store.set('clear-sid-1', session1, () => resolve());
+      });
+      
+      await new Promise<void>((resolve) => {
+        store.set('clear-sid-2', session2, () => resolve());
+      });
+      
+      await new Promise<void>((resolve) => {
+        store.clear(() => resolve());
+      });
+      
+      const length = await new Promise<number>((resolve) => {
+        store.length((err, count) => {
+          resolve(count || 0);
+        });
+      });
+      
+      expect(length).toBe(0);
+    });
+  });
 });
