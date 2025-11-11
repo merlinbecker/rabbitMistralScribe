@@ -46,8 +46,10 @@ Eine Progressive Web App zum Aufnehmen, Transkribieren und automatischen Zusamme
 #### Recordings
 - Audio-Daten (als Base64)
 - Status: pending, transcribing, transcribed, failed
-- Transkript und Zusammenfassung
-- Link zur GitHub-Datei
+- KI-generierter Titel (einzeilig, max. 60 Zeichen)
+- Transkript (vollständige Spracherkennung)
+- Zusammenfassung (strukturierte KI-Zusammenfassung)
+- Link zur GitHub-Datei (Markdown mit YAML Frontmatter)
 
 ## Setup
 
@@ -100,9 +102,9 @@ Die App läuft auf Port 5000 und ist unter der Replit-URL erreichbar.
 
 ### Recordings
 - `GET /api/recordings` - List user's recordings
-- `POST /api/recordings` - Upload audio recording
-- `POST /api/recordings/:id/transcribe` - Transcribe and summarize
-- `PATCH /api/recordings/:id` - Update transcript/summary
+- `POST /api/recordings` - Upload audio recording (FormData: audio, duration)
+- `POST /api/recordings/:id/transcribe` - Manually trigger transcription
+- `PATCH /api/recordings/:id` - Update title/transcript/summary
 
 ## Design-System
 
@@ -195,6 +197,16 @@ Das Design folgt den Richtlinien in `design_guidelines.md`:
 - Final-Toast mit Gesamtergebnis (X erfolgreich, Y fehlgeschlagen)
 - Loading-State mit Spinner während Verarbeitung
 - Automatische Query Cache Invalidierung nach Abschluss
+
+### 7. Recording Workflow (Vollständig)
+- **Aufnahme**: Client erstellt Audio-Aufnahme und speichert in IndexedDB
+- **Upload**: Bei Online-Verbindung automatischer Upload zum Server
+- **Transkription**: Mistral Voxtral API konvertiert Audio zu Text
+- **Titel-Generierung**: Mistral Chat API erstellt einzeiligen Titel (max. 60 Zeichen)
+- **Zusammenfassung**: Mistral Chat API erstellt strukturierte Zusammenfassung
+- **GitHub-Export**: Markdown-Datei mit YAML Frontmatter (title, date, duration, summary)
+- **Status-Updates**: Client pollt alle 3 Sekunden und aktualisiert UI
+- **Cleanup**: Nach erfolgreicher Transkription wird Audio aus IndexedDB gelöscht
 
 ## Technische Details
 
