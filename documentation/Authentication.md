@@ -136,51 +136,69 @@ if (authenticated === 'true' && token) {
 
 **Datei**: `server/replitSessionStore.ts`
 
-Implementiert `express-session.Store` Interface für persistente Session-Speicherung:
+Implementiert `express-session.Store` Interface für persistente Session-Speicherung.
+
+**Wichtige Implementierungsdetails**:
+
+1. **Replit DB Response Unwrapping**: Replit Database gibt Daten in einem Wrapper-Objekt `{ok: true, value: "..."}` zurück. Die eigentlichen Session-Daten sind als JSON-String im `value`-Feld gespeichert.
+
+2. **Session Data Serialization**: Sessions werden als JSON-String gespeichert, um korrekte Serialisierung zu garantieren. Beim Speichern werden Date-Objekte in ISO-Strings konvertiert.
+
+3. **Validierung**: Beim Abrufen wird die Session-Struktur validiert, insbesondere das Vorhandensein des `cookie`-Objekts.
 
 ```typescript
-export class ReplitSessionStore extends session.Store {
-  private db: Database;
+async get(sid: string, callback: ...): Promise<void> {
+  const rawData = await this.db.get(this.sessionKey(sid));
   
-  constructor() {
-    super();
-    this.db = new Database();
+  // 1. Prüfen ob Daten existieren
+  if (!rawData || (typeof rawData === 'object' && 'ok' in rawData && !rawData.ok)) {
+    callback(null, null);
+    return;
   }
   
-  private sessionKey(sid: string): string {
-    return `session:${sid}`;
+  // 2. Replit DB Response unwrappen
+  let dataToProcess = rawData;
+  if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData && rawData.ok) {
+    dataToProcess = rawData.value; // JSON-String extrahieren
   }
   
-  async get(sid: string, callback: (err: any, session?: session.SessionData | null) => void): Promise<void> {
-    try {
-      console.log('[SESSION_STORE] Getting session:', sid);
-      const sessionData = await this.db.get(this.sessionKey(sid));
-      
-      // Validate session data structure
-      if (!sessionData || typeof sessionData !== 'object') {
-        console.log('[SESSION_STORE] No valid session data found for:', sid);
-        callback(null, null);
-        return;
-      }
-      
-      // Ensure cookie object exists with required properties
-      if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
-        console.log('[SESSION_STORE] Invalid session cookie structure for:', sid);
-        callback(null, null);
-        return;
-      }
-      
-      console.log('[SESSION_STORE] Valid session found:', sid, 'userId:', sessionData.userId);
-      callback(null, sessionData);
-    } catch (error) {
-      console.error('[SESSION_STORE] Error getting session:', error);
-      callback(error);
+  // 3. JSON parsen
+  let sessionData;
+  if (typeof dataToProcess === 'string') {
+    sessionData = JSON.parse(dataToProcess);
+  } else {
+    sessionData = dataToProcess;
+  }
+  
+  // 4. Cookie-Struktur validieren
+  if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
+    callback(null, null);
+    return;
+  }
+  
+  // 5. Date-Strings zurück zu Date-Objekten konvertieren
+  if (sessionData.cookie.expires && typeof sessionData.cookie.expires === 'string') {
+    sessionData.cookie.expires = new Date(sessionData.cookie.expires);
+  }
+  
+  callback(null, sessionData);
+}
+
+async set(sid: string, session: session.SessionData, callback?: ...): Promise<void> {
+  // Session kopieren und Dates serialisieren
+  const sessionCopy = {
+    ...session,
+    cookie: {
+      ...session.cookie,
+      expires: session.cookie.expires ? session.cookie.expires.toISOString() : undefined
     }
-  }
+  };
   
-  async set(sid: string, session: session.SessionData, callback?: (err?: any) => void): Promise<void> {
-    try {
-      console.log('[SESSION_STORE] Setting session:', sid, 'userId:', session.userId);
+  // Als JSON-String speichern
+  const jsonString = JSON.stringify(sessionCopy);
+  await this.db.set(this.sessionKey(sid), jsonString);
+  
+  callback?.();d:', session.userId);
       
       // Validate session structure before saving
       if (!session.cookie || typeof session.cookie !== 'object') {
@@ -405,7 +423,7 @@ const defaultQueryFn: QueryFunction = async ({ queryKey }) => {
 ### Sessions
 
 **Replit Database Keys**:
-- `session:<sessionId>` - Session-Daten
+- `session:<sessionId>` - Session-Daten (gespeichert als JSON-String)
 
 **Session Data**:
 ```typescript
@@ -419,6 +437,17 @@ const defaultQueryFn: QueryFunction = async ({ queryKey }) => {
   };
 }
 ```
+
+**Wichtig**: Replit Database gibt Daten in einem Wrapper-Objekt zurück:
+```typescript
+// Bei erfolgreicher Abfrage:
+{ ok: true, value: "<actual-data>" }
+
+// Bei fehlgeschlagener Abfrage:
+{ ok: false, error: { message: "", statusCode: 404 } }
+```
+
+Dieser Wrapper muss beim Lesen aus der DB entpackt werden, um an die eigentlichen Daten zu gelangen.
 
 ---
 
@@ -603,6 +632,10 @@ if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
 4. **Logging für Debugging** - Aber keine sensiblen Daten loggen
 5. **Graceful Degradation** - Fallback auf Bearer Token wenn Session fehlt
 6. **Datenvalidierung** - Immer Session-Daten vor Speichern/Abrufen validieren
+7. **Replit DB Response Unwrapping** - Immer `{ok, value}` Wrapper prüfen und entpacken
+8. **JSON-Serialisierung** - Komplexe Objekte als JSON-String speichern, nicht direkt
+9. **Date-Handling** - Date-Objekte zu ISO-Strings konvertieren vor Speichern
+10. **Error-Object-Prüfung** - Prüfen ob `{ok: false}` zurückgegeben wurde für nicht-existierende Keys
 7. **Error Handling** - Saubere null-Rückgaben statt undefined bei ungültigen Daten
 
 ## Troubleshooting
@@ -622,6 +655,22 @@ if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
 - **Ursache**: User existiert nicht mehr in Database
 - **Lösung**: Logout und neuer Login erforderlich
 - **Debug**: `[AUTH]` Logs prüfen für User-Lookup
+
+**Problem**: `TypeError: keys is not iterable` oder `undefined` bei DB-Operationen
+- **Ursache**: Replit Database gibt Wrapper-Objekte `{ok: true, value: "..."}` zurück
+- **Lösung**: Response unwrappen bevor Daten verwendet werden
+- **Code-Pattern**:
+  ```typescript
+  const rawData = await db.get(key);
+  if (rawData && typeof rawData === 'object' && 'ok' in rawData && rawData.ok) {
+    const actualData = rawData.value; // Dies sind die eigentlichen Daten
+  }
+  ```
+
+**Problem**: Session-Daten fehlen nach Speichern
+- **Ursache**: Daten wurden nicht als JSON-String gespeichert
+- **Lösung**: Immer `JSON.stringify()` vor `db.set()` verwenden
+- **Wichtig**: Date-Objekte müssen zu ISO-Strings konvertiert werden
 
 ### OAuth-bezogene Fehler
 
