@@ -323,18 +323,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Recordings routes
   app.get('/api/recordings', requireAuth, async (req, res) => {
     const recordings = await storage.getRecordingsByUserId(req.session.userId!);
-    
+
     // Only log if there are processing recordings
     const processingCount = recordings.filter(r => r.status === 'pending' || r.status === 'transcribing').length;
     if (processingCount > 0) {
       console.log(`[API] GET /api/recordings - ${recordings.length} total, ${processingCount} processing`);
     }
-    
+
     res.json(recordings);
   });
 
   app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
-    const logMsg = `\n[ROUTES] ======================================== POST /api/recordings called at ${new Date().toISOString()} for user ${req.session.userId} ========================================\n`;
+    const logMsg = `\n[ROUTES] ======================================== POST /api/recordings called at ${new Date().toISOString()} for user ${req.session.userId} ======================================== \n`;
     process.stdout.write(logMsg);
     console.log('[ROUTES] ========================================');
     console.log('[ROUTES] POST /api/recordings called');
@@ -367,9 +367,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create recording entry
       console.log('[UPLOAD] 🔄 Creating recording entry in database...');
-      let recording;
+      let createdRecording;
       try {
-        recording = await storage.createRecording({
+        createdRecording = await storage.createRecording({
           userId: req.session.userId!,
           audioUrl,
           duration,
@@ -379,10 +379,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           githubFileUrl: null,
         });
         console.log('[UPLOAD] ✅ Recording created in DB:', {
-          id: recording.id,
-          userId: recording.userId,
-          status: recording.status,
-          duration: recording.duration
+          id: createdRecording.id,
+          userId: createdRecording.userId,
+          status: createdRecording.status,
+          duration: createdRecording.duration
         });
       } catch (error) {
         console.error('[UPLOAD] ❌ CRITICAL: Failed to create recording in DB');
@@ -391,43 +391,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw error;
       }
 
-      // Enqueue transcription job
-      process.stdout.write(`\n[ROUTES] 📤 ENQUEUEING JOB for recording ${recording.id}\n`);
+      console.log('[ROUTES] 📤 Sending response to client with recording:', createdRecording.id);
       console.log('[ROUTES] ========================================');
-      console.log('[ROUTES] 📤 ENQUEUEING TRANSCRIPTION JOB');
-      console.log('[ROUTES] Recording ID:', recording.id);
+
+      // Check if user has Mistral API key before queueing
+      const userSettings = await storage.getUserSettings(req.session.userId!);
+      if (!userSettings?.mistralApiKey) {
+        console.log('[ROUTES] ⚠️ No Mistral API key - marking recording as failed');
+        await storage.updateRecording(createdRecording.id, { 
+          status: 'failed',
+        });
+        res.json(createdRecording);
+        return;
+      }
+
+      // Enqueue transcription job
+      console.log('[ROUTES] ========================================');
+      console.log('[ROUTES] 📋 QUEUEING TRANSCRIPTION JOB');
+      console.log('[ROUTES] Recording ID:', createdRecording.id);
       console.log('[ROUTES] User ID:', req.session.userId);
       console.log('[ROUTES] ========================================');
-      
-      let job;
-      try {
-        job = await JobQueue.enqueue(recording.id, req.session.userId!);
-        
-        console.log('[ROUTES] ========================================');
-        console.log('[ROUTES] ✅ JOB ENQUEUED SUCCESSFULLY');
-        console.log('[ROUTES] Job details:', {
-          jobId: job,
-          recordingId: recording.id,
-          userId: req.session.userId,
-          timestamp: new Date().toISOString()
-        });
-        console.log('[ROUTES] ========================================');
-      } catch (error) {
-        console.error('[ROUTES] ❌ CRITICAL: Failed to enqueue job');
-        console.error('[ROUTES] Error:', error);
-        console.error('[ROUTES] Stack:', error instanceof Error ? error.stack : 'No stack');
-        throw error;
-      }
+
+      await JobQueue.enqueue({
+        recordingId: createdRecording.id,
+        userId: req.session.userId!,
+      });
 
       // Notify worker of new job
       console.log('[ROUTES] ========================================');
       console.log('[ROUTES] 🔔 NOTIFYING WORKER OF NEW JOB');
       console.log('[ROUTES] About to call TranscriptionWorker.notifyNewJob()');
       console.log('[ROUTES] ========================================');
-      
+
       try {
         await TranscriptionWorker.notifyNewJob();
-        
+
         console.log('[ROUTES] ========================================');
         console.log('[ROUTES] ✅ WORKER NOTIFICATION COMPLETED');
         console.log('[ROUTES] notifyNewJob() returned successfully');
@@ -440,9 +438,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Send response immediately
-      console.log('[ROUTES] 📤 Sending response to client with recording:', recording.id);
-      res.json(recording);
-      
+      console.log('[ROUTES] 📤 Sending response to client with recording:', createdRecording.id);
+      res.json(createdRecording);
+
       console.log('[ROUTES] ========================================');
       console.log('[ROUTES] POST /api/recordings completed successfully');
       console.log('[ROUTES] ========================================');
