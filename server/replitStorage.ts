@@ -42,19 +42,25 @@ export class ReplitStorage implements IStorage {
   }
 
   async getUserByGitHubId(githubId: string): Promise<User | undefined> {
-    console.log('[REPLIT_STORAGE] Looking up user by GitHub ID:', githubId);
-    const userId = await this.db.get(this.userGithubKey(githubId));
-    console.log('[REPLIT_STORAGE] Found userId for GitHub ID:', { githubId, userId });
+    try {
+      const rawUserId = await this.db.get(this.userGithubKey(githubId));
+      if (!rawUserId || (typeof rawUserId === 'object' && 'ok' in rawUserId && !rawUserId.ok)) {
+        return undefined;
+      }
 
-    // Check if userId is valid (not an error object)
-    if (!userId || (typeof userId === 'object' && 'ok' in userId && !userId.ok)) {
-      console.log('[REPLIT_STORAGE] No valid userId found for GitHub ID:', githubId);
+      // Unwrap if needed
+      let userId: string;
+      if (typeof rawUserId === 'object' && rawUserId !== null && 'ok' in rawUserId && 'value' in rawUserId) {
+        userId = rawUserId.value as string;
+      } else {
+        userId = rawUserId as string;
+      }
+
+      return this.getUser(userId);
+    } catch (error) {
+      console.error('[REPLIT_STORAGE] Error getting user by GitHub ID:', error);
       return undefined;
     }
-
-    const user = await this.getUser(userId as string);
-    console.log('[REPLIT_STORAGE] Retrieved user:', { id: user?.id, username: user?.username });
-    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -99,35 +105,25 @@ export class ReplitStorage implements IStorage {
 
   // User settings methods
   async getUserSettings(userId: string): Promise<UserSettings | undefined> {
-    const key = `user_settings:${userId}`;
-    const data = await this.db.get(key);
-
-    if (!data) {
-      return undefined;
-    }
-
     try {
-      // Unwrap Replit DB response if needed - DOUBLE unwrap!
-      let unwrappedData = data;
-
-      // First unwrap
-      if (typeof data === 'object' && 'ok' in data && 'value' in data) {
-        unwrappedData = data.value;
+      const rawSettings = await this.db.get(this.settingsKey(userId));
+      if (!rawSettings || (typeof rawSettings === 'object' && 'ok' in rawSettings && !rawSettings.ok)) {
+        return undefined;
       }
 
-      // Second unwrap: might still be wrapped
-      if (typeof unwrappedData === 'object' && 'ok' in unwrappedData && 'value' in unwrappedData) {
-        unwrappedData = unwrappedData.value;
+      // Unwrap Replit DB response if needed
+      let settings: UserSettings;
+      if (typeof rawSettings === 'object' && rawSettings !== null && 'ok' in rawSettings && 'value' in rawSettings) {
+        settings = typeof rawSettings.value === 'string' ? JSON.parse(rawSettings.value) : rawSettings.value;
+      } else if (typeof rawSettings === 'string') {
+        settings = JSON.parse(rawSettings);
+      } else {
+        settings = rawSettings as UserSettings;
       }
-
-      // Parse if still string
-      const settings = typeof unwrappedData === 'string'
-        ? JSON.parse(unwrappedData)
-        : unwrappedData;
 
       return settings;
     } catch (error) {
-      console.error('[REPLIT_STORAGE] Error parsing settings:', error);
+      console.error('[REPLIT_STORAGE] Error getting user settings:', error);
       return undefined;
     }
   }
