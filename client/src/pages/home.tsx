@@ -293,13 +293,14 @@ export default function Home() {
 
     try {
       // Save locally first (will add serverRecordingId after upload)
-      const localId = await indexedDB.saveRecording({
+      await indexedDB.addRecording({
         id: recordingId, // Use the generated ID as local ID
         audioBlob,
         duration,
-        timestamp: Date.now(),
+        createdAt: new Date(),
         status: 'queued',
       });
+      const localId = recordingId;
 
       // console.log('[LOCAL_SAVE] Saved to IndexedDB:', localId);
 
