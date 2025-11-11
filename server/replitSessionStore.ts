@@ -17,20 +17,46 @@ export class ReplitSessionStore extends session.Store {
   async get(sid: string, callback: (err: any, session?: session.SessionData | null) => void): Promise<void> {
     try {
       console.log('[SESSION_STORE] Getting session:', sid);
-      const sessionData = await this.db.get(this.sessionKey(sid));
+      const rawData = await this.db.get(this.sessionKey(sid));
+      
+      // Check if data exists and is not an error object from Replit DB
+      if (!rawData || (typeof rawData === 'object' && 'ok' in rawData && !rawData.ok)) {
+        console.log('[SESSION_STORE] No session found in DB for:', sid);
+        callback(null, null);
+        return;
+      }
+      
+      // Parse the session data if it's stored as JSON string
+      let sessionData;
+      if (typeof rawData === 'string') {
+        try {
+          sessionData = JSON.parse(rawData);
+        } catch (e) {
+          console.log('[SESSION_STORE] Failed to parse session JSON for:', sid);
+          callback(null, null);
+          return;
+        }
+      } else {
+        sessionData = rawData;
+      }
       
       // Validate session data structure
       if (!sessionData || typeof sessionData !== 'object') {
-        console.log('[SESSION_STORE] No valid session data found for:', sid);
+        console.log('[SESSION_STORE] Invalid session data type for:', sid);
         callback(null, null);
         return;
       }
       
       // Ensure cookie object exists with required properties
       if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
-        console.log('[SESSION_STORE] Invalid session cookie structure for:', sid);
+        console.log('[SESSION_STORE] Missing or invalid cookie for:', sid);
         callback(null, null);
         return;
+      }
+      
+      // Convert date strings back to Date objects if needed
+      if (sessionData.cookie.expires && typeof sessionData.cookie.expires === 'string') {
+        sessionData.cookie.expires = new Date(sessionData.cookie.expires);
       }
       
       console.log('[SESSION_STORE] Valid session found:', sid, 'userId:', sessionData.userId);
@@ -52,7 +78,17 @@ export class ReplitSessionStore extends session.Store {
         return;
       }
       
-      await this.db.set(this.sessionKey(sid), session);
+      // Create a serializable copy of the session
+      const sessionCopy = {
+        ...session,
+        cookie: {
+          ...session.cookie,
+          expires: session.cookie.expires ? session.cookie.expires.toISOString() : undefined
+        }
+      };
+      
+      // Store as JSON string to ensure proper serialization
+      await this.db.set(this.sessionKey(sid), JSON.stringify(sessionCopy));
       console.log('[SESSION_STORE] Session saved successfully:', sid);
       callback?.();
     } catch (error) {
