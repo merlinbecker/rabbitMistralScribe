@@ -64,7 +64,15 @@ export class JobQueue {
 
       if (!rawData) continue;
 
-      const job = JSON.parse(rawData as string) as TranscriptionJob;
+      // Unwrap Replit DB response if needed
+      let jobData: string;
+      if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
+        jobData = rawData.value as string;
+      } else {
+        jobData = rawData as string;
+      }
+
+      const job = JSON.parse(jobData) as TranscriptionJob;
 
       // Skip jobs that are already processing or completed
       if (job.status !== 'pending') continue;
@@ -94,7 +102,15 @@ export class JobQueue {
 
     if (!rawData) return;
 
-    const job = JSON.parse(rawData as string) as TranscriptionJob;
+    // Unwrap Replit DB response if needed
+    let jobData: string;
+    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
+      jobData = rawData.value as string;
+    } else {
+      jobData = rawData as string;
+    }
+
+    const job = JSON.parse(jobData) as TranscriptionJob;
     job.status = 'completed';
     job.processedAt = new Date().toISOString();
 
@@ -112,7 +128,15 @@ export class JobQueue {
 
     if (!rawData) return;
 
-    const job = JSON.parse(rawData as string) as TranscriptionJob;
+    // Unwrap Replit DB response if needed
+    let jobData: string;
+    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
+      jobData = rawData.value as string;
+    } else {
+      jobData = rawData as string;
+    }
+
+    const job = JSON.parse(jobData) as TranscriptionJob;
     job.status = 'failed';
     job.error = error;
     job.processedAt = new Date().toISOString();
@@ -128,7 +152,15 @@ export class JobQueue {
 
     if (!rawData) return;
 
-    const job = JSON.parse(rawData as string) as TranscriptionJob;
+    // Unwrap Replit DB response if needed
+    let jobData: string;
+    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
+      jobData = rawData.value as string;
+    } else {
+      jobData = rawData as string;
+    }
+
+    const job = JSON.parse(jobData) as TranscriptionJob;
     job.status = 'pending';
 
     await db.set(key, JSON.stringify(job));
@@ -149,7 +181,15 @@ export class JobQueue {
 
     if (!rawData) return null;
 
-    return JSON.parse(rawData as string) as TranscriptionJob;
+    // Unwrap Replit DB response if needed
+    let jobData: string;
+    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
+      jobData = rawData.value as string;
+    } else {
+      jobData = rawData as string;
+    }
+
+    return JSON.parse(jobData) as TranscriptionJob;
   }
 
   // Get pending jobs count
@@ -170,7 +210,15 @@ export class JobQueue {
       const rawData = await db.get(key);
       if (!rawData) continue;
 
-      const job = JSON.parse(rawData as string) as TranscriptionJob;
+      // Unwrap Replit DB response if needed
+      let jobData: string;
+      if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
+        jobData = rawData.value as string;
+      } else {
+        jobData = rawData as string;
+      }
+
+      const job = JSON.parse(jobData) as TranscriptionJob;
       if (job.status === 'pending') count++;
     }
 
