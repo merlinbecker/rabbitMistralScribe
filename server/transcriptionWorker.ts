@@ -8,84 +8,142 @@ export class TranscriptionWorker {
 
   static start(): void {
     if (this.isRunning) {
-      console.log('[WORKER] Already running');
+      console.log('[WORKER] ⚠️ Already running - ignoring start request');
+      console.log('[WORKER] Current state:', {
+        isRunning: this.isRunning,
+        isProcessing: this.isProcessing,
+        timestamp: new Date().toISOString()
+      });
       return;
     }
 
     this.isRunning = true;
-    console.log('[WORKER] ✅ Started - push-based processing enabled');
+    console.log('[WORKER] ✅ Started successfully');
+    console.log('[WORKER] Configuration:', {
+      isRunning: this.isRunning,
+      isProcessing: this.isProcessing,
+      mode: 'push-based',
+      timestamp: new Date().toISOString()
+    });
   }
 
   static stop(): void {
+    console.log('[WORKER] 🛑 Stopping worker...');
+    console.log('[WORKER] State before stop:', {
+      isRunning: this.isRunning,
+      isProcessing: this.isProcessing
+    });
     this.isRunning = false;
-    console.log('[WORKER] Stopped');
+    console.log('[WORKER] ✅ Stopped');
   }
 
   // Called when a new job is enqueued
   static async notifyNewJob(): Promise<void> {
+    console.log('[WORKER] 🔔 notifyNewJob() called');
+    console.log('[WORKER] Current state:', {
+      isRunning: this.isRunning,
+      isProcessing: this.isProcessing,
+      timestamp: new Date().toISOString()
+    });
+
     if (!this.isRunning) {
-      console.log('[WORKER] Not running, ignoring notification');
+      console.log('[WORKER] ❌ Not running, ignoring notification');
       return;
     }
 
     // If already processing, the current processQueue will continue
     if (this.isProcessing) {
-      console.log('[WORKER] Already processing, new job will be picked up automatically');
+      console.log('[WORKER] ℹ️ Already processing, new job will be picked up automatically');
+      console.log('[WORKER] Current processing state - job will be queued for next iteration');
       return;
     }
 
-    console.log('[WORKER] 🔔 New job notification received, starting processing');
+    console.log('[WORKER] ✅ Starting queue processing...');
     await this.processQueue();
   }
 
   private static async processQueue(): Promise<void> {
+    console.log('[WORKER] 🚀 processQueue() started');
+    console.log('[WORKER] Setting isProcessing flag to true');
+    
     // Mark as processing to prevent concurrent execution
     this.isProcessing = true;
 
     try {
+      console.log('[WORKER] 🔄 Entering job processing loop');
+      let jobsProcessed = 0;
+      
       // Process jobs until queue is empty
       while (this.isRunning) {
+        console.log(`[WORKER] Loop iteration ${jobsProcessed + 1} - fetching next job from queue`);
         const job = await JobQueue.dequeue();
 
         if (!job) {
           // Queue is empty
-          console.log('[WORKER] Queue is empty, waiting for new jobs');
+          console.log('[WORKER] ✅ Queue is empty - no more jobs to process');
+          console.log('[WORKER] Total jobs processed in this run:', jobsProcessed);
           break;
         }
 
-        console.log('[WORKER] Processing job:', job.id, 'recording:', job.recordingId);
+        console.log('[WORKER] 📦 Job dequeued:', {
+          jobId: job.id,
+          recordingId: job.recordingId,
+          userId: job.userId,
+          status: job.status,
+          attempts: job.attempts,
+          timestamp: new Date().toISOString()
+        });
 
         try {
+          console.log(`[WORKER] ▶️ Starting transcription for job ${job.id}`);
+          const startTime = Date.now();
+          
           await this.transcribeRecording(job.recordingId, job.userId);
           await JobQueue.markCompleted(job.id);
-          console.log('[WORKER] ✅ Job completed:', job.id);
+          
+          const duration = Date.now() - startTime;
+          console.log(`[WORKER] ✅ Job completed successfully: ${job.id}`);
+          console.log(`[WORKER] Processing time: ${(duration / 1000).toFixed(2)}s`);
+          
+          jobsProcessed++;
         } catch (error) {
-          console.error('[WORKER] ❌ Job failed:', job.id, error);
+          console.error(`[WORKER] ❌ Job failed: ${job.id}`);
+          console.error('[WORKER] Error details:', error);
 
           if (job.attempts < 3) {
             // Requeue for retry
+            console.log(`[WORKER] 🔄 Requeuing job ${job.id} for retry (attempt ${job.attempts + 1}/3)`);
             await JobQueue.requeue(job.id);
-            console.log('[WORKER] Job requeued for retry:', job.id);
           } else {
             // Max attempts reached
+            console.log(`[WORKER] ⚠️ Max attempts reached for job ${job.id} - marking as failed`);
             await JobQueue.markFailed(job.id, error instanceof Error ? error.message : 'Unknown error');
 
             // Also mark recording as failed
+            console.log(`[WORKER] Updating recording ${job.recordingId} status to 'failed'`);
             await storage.updateRecording(job.recordingId, { status: 'failed' });
           }
         }
 
         // Check pending count for logging
         const pendingCount = await JobQueue.getPendingCount();
-        if (pendingCount > 0) {
-          console.log('[WORKER] 📋', pendingCount, 'jobs remaining in queue');
-        }
+        console.log(`[WORKER] 📊 Queue status: ${pendingCount} job(s) remaining`);
       }
+      
+      console.log('[WORKER] 🏁 Queue processing completed');
+      console.log(`[WORKER] Summary: ${jobsProcessed} job(s) processed in this run`);
     } catch (error) {
-      console.error('[WORKER] Error processing queue:', error);
+      console.error('[WORKER] ❌ Critical error in processQueue:', error);
+      console.error('[WORKER] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     } finally {
       // Mark as no longer processing
+      console.log('[WORKER] 🔓 Releasing isProcessing flag');
       this.isProcessing = false;
+      console.log('[WORKER] Final state:', {
+        isRunning: this.isRunning,
+        isProcessing: this.isProcessing,
+        timestamp: new Date().toISOString()
+      });
     }
   }
 

@@ -358,13 +358,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[UPLOAD] Recording created in DB:', recording.id);
 
       // Enqueue transcription job
-      const jobId = await JobQueue.enqueue(recording.id, req.session.userId!);
-      console.log('[UPLOAD] 📋 Transcription job enqueued:', jobId);
-
-      // Notify worker about new job (push-based)
-      TranscriptionWorker.notifyNewJob().catch(err => {
-        console.error('[UPLOAD] Failed to notify worker:', err);
+      console.log('[ROUTES] 📤 Enqueueing transcription job for recording:', recording.id);
+      const job = await JobQueue.enqueue(recording.id, req.session.userId);
+      console.log('[ROUTES] ✅ Transcription job enqueued successfully:', {
+        jobId: job.id,
+        recordingId: recording.id,
+        userId: req.session.userId,
+        timestamp: new Date().toISOString()
       });
+
+      // Notify worker of new job
+      console.log('[ROUTES] 🔔 Notifying worker of new job...');
+      await TranscriptionWorker.notifyNewJob();
+      console.log('[ROUTES] ✅ Worker notification sent');
 
       // Send response immediately
       res.json(recording);
