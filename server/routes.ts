@@ -23,7 +23,7 @@ declare module 'express-session' {
 // Auth middleware with Bearer token support
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   let userId = req.session.userId;
-  
+
   // Check for Bearer token if session is not available
   if (!userId) {
     const authHeader = req.headers.authorization;
@@ -32,25 +32,25 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
       console.log('[AUTH] Using Bearer token for auth, userId:', userId);
     }
   }
-  
+
   if (!userId) {
     console.log('[AUTH] No authentication found - session userId:', req.session.userId, 'sessionID:', req.sessionID);
-    return res.status(401).json({ 
+    return res.status(401).json({
       error: 'Unauthorized',
       details: 'No session or valid Bearer token found'
     });
   }
-  
+
   // Verify user exists
   const user = await storage.getUser(userId);
   if (!user) {
     console.log('[AUTH] User not found for userId:', userId);
-    return res.status(401).json({ 
+    return res.status(401).json({
       error: 'Unauthorized',
       details: 'User not found'
     });
   }
-  
+
   // Store userId in session for consistency
   req.session.userId = userId;
   next();
@@ -169,7 +169,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create session and save it
       req.session.userId = user.id;
-      
+
       // Save session and wait for it to complete before redirecting
       req.session.save((err) => {
         if (err) {
@@ -206,7 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[AUTH] /api/auth/user called');
     console.log('[AUTH] Session ID:', req.sessionID);
     console.log('[AUTH] Session userId:', req.session.userId);
-    
+
     // Check for Bearer token first
     const authHeader = req.headers.authorization;
     let userId = req.session.userId;
@@ -228,7 +228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     console.log('[AUTH] User found:', { id: user.id, username: user.username });
-    
+
     // Don't send access token to frontend
     const { accessToken, ...safeUser } = user;
     res.json(safeUser);
@@ -357,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Automatically trigger transcription in background
       // Start immediately after response is sent
       console.log('[UPLOAD] Starting background transcription for recording:', recording.id);
-      
+
       // Use Promise to ensure async execution doesn't block
       Promise.resolve().then(() => {
         console.log('[UPLOAD] Promise resolved, calling transcribeRecording NOW');
@@ -386,28 +386,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const recording = await storage.getRecording(recordingId);
       console.log('[TRANSCRIBE] Raw recording object:', JSON.stringify(recording, null, 2));
-      
+
       if (!recording) {
         console.error('[TRANSCRIBE] Recording not found:', recordingId);
         await storage.updateRecording(recordingId, { status: 'failed' });
         return;
       }
-      console.log('[TRANSCRIBE] Recording loaded successfully:', { 
-        id: recording.id, 
-        status: recording.status, 
+      console.log('[TRANSCRIBE] Recording loaded successfully:', {
+        id: recording.id,
+        status: recording.status,
         hasAudio: !!recording.audioUrl,
         audioUrlLength: recording.audioUrl?.length || 0,
         userId: recording.userId
       });
 
       const settings = await storage.getUserSettings(userId);
-      console.log('[TRANSCRIBE] Settings loaded:', { 
-        userId, 
-        settingsFound: !!settings, 
+      console.log('[TRANSCRIBE] Settings loaded:', {
+        userId,
+        settingsFound: !!settings,
         hasMistralKey: !!settings?.mistralApiKey,
         mistralKeyLength: settings?.mistralApiKey?.length || 0
       });
-      
+
       if (!settings?.mistralApiKey) {
         console.error('[TRANSCRIBE] No Mistral API key configured for user:', userId);
         await storage.updateRecording(recordingId, { status: 'failed' });
@@ -599,7 +599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updates = updateRecordingSchema.parse(req.body);
       const updated = await storage.updateRecording(id, updates);
-      
+
       res.json(updated);
     } catch (error) {
       console.error('Recording update error:', error);
@@ -773,7 +773,7 @@ ${recording.transcript || 'Kein Transkript verfügbar'}
 
 ---
 
-*Aufnahmedauer: ${recording.duration ? Math.floor(recording.duration / 60) : 0}:${recording.duration ? (recording.duration % 60).toString().padStart(2, '0') : '00'}*  
+*Aufnahmedauer: ${recording.duration ? Math.floor(recording.duration / 60) : 0}:${recording.duration ? (recording.duration % 60).toString().padStart(2, '0') : '00'}*
 *Erstellt: ${new Date(timestamp).toLocaleString('de-DE')}*
 `;
 
