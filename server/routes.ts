@@ -351,14 +351,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('[UPLOAD] Recording created in DB:', recording.id);
 
-      // Send response FIRST to unblock client
-      res.json(recording);
-
-      // IMMEDIATELY trigger transcription in background - no await!
+      // IMMEDIATELY trigger transcription BEFORE sending response
       console.log('[UPLOAD] 🎯 Starting background transcription for:', recording.id);
       
       // Fire-and-forget: start transcription without blocking
-      transcribeRecording(recording.id, req.session.userId!).then(() => {
+      Promise.resolve().then(() => {
+        console.log('[UPLOAD] 🔥 Promise.resolve().then() executing NOW');
+        return transcribeRecording(recording.id, req.session.userId!);
+      }).then(() => {
         console.log('[UPLOAD] ✅ Background transcription completed for:', recording.id);
       }).catch((err) => {
         console.error('[UPLOAD] ❌ Background transcription failed for:', recording.id);
@@ -368,6 +368,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('[UPLOAD] Error stack:', err.stack);
         }
       });
+
+      // Send response immediately (don't wait for transcription)
+      res.json(recording);
     } catch (error) {
       console.error('[UPLOAD] Failed to create recording:', error);
       res.status(500).json({ error: 'Failed to create recording' });
