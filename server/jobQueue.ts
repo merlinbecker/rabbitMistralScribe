@@ -137,7 +137,8 @@ export class JobQueue {
   // Get job status
   async getJob(jobId: string): Promise<TranscriptionJob | null> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
-    return this.db.get<TranscriptionJob>(key) || null;
+    const job = await this.db.get<TranscriptionJob>(key);
+    return job || null;
   }
 
   // Get pending jobs count

@@ -39,15 +39,12 @@ export class ReplitStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const now = new Date();
     const user: User = {
       id,
       githubId: insertUser.githubId,
       username: insertUser.username,
-      avatarUrl: insertUser.avatarUrl,
-      accessToken: insertUser.accessToken,
-      createdAt: now,
-      updatedAt: now,
+      avatarUrl: insertUser.avatarUrl ?? null,
+      accessToken: insertUser.accessToken ?? null,
     };
 
     await this.db.set(this.userKey(id), user);
@@ -67,8 +64,7 @@ export class ReplitStorage implements IStorage {
     const updatedUser: User = {
       ...user,
       ...updates,
-      id: user.id, // Ensure ID is preserved
-      updatedAt: new Date(),
+      id: user.id,
     };
 
     await this.db.set(this.userKey(id), updatedUser);
@@ -173,8 +169,9 @@ export class ReplitStorage implements IStorage {
   async createRecording(insertRecording: InsertRecording): Promise<Recording> {
     const id = randomUUID();
     const recording: Recording = {
-      ...insertRecording,
       id,
+      userId: insertRecording.userId,
+      title: insertRecording.title ?? null,
       audioUrl: insertRecording.audioUrl ?? null,
       duration: insertRecording.duration ?? null,
       status: insertRecording.status || 'pending',
