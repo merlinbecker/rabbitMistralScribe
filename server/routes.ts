@@ -322,6 +322,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
+    const logMsg = `\n[ROUTES] ======================================== POST /api/recordings called at ${new Date().toISOString()} for user ${req.session.userId} ========================================\n`;
+    process.stdout.write(logMsg);
     console.log('[ROUTES] ========================================');
     console.log('[ROUTES] POST /api/recordings called');
     console.log('[ROUTES] Timestamp:', new Date().toISOString());
@@ -329,6 +331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[ROUTES] ========================================');
 
     try {
+      process.stdout.write('[UPLOAD] Recording upload started\n');
       console.log('[UPLOAD] Recording upload started');
 
       if (!req.file) {
@@ -377,6 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Enqueue transcription job
+      process.stdout.write(`\n[ROUTES] 📤 ENQUEUEING JOB for recording ${recording.id}\n`);
       console.log('[ROUTES] ========================================');
       console.log('[ROUTES] 📤 ENQUEUEING TRANSCRIPTION JOB');
       console.log('[ROUTES] Recording ID:', recording.id);
