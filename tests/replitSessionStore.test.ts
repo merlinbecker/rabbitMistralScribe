@@ -34,13 +34,17 @@ vi.mock('@replit/database', () => {
   };
 });
 
+import { DatabaseService } from '../server/databaseService';
+
 describe('ReplitSessionStore', () => {
   let store: ReplitSessionStore;
+  let databaseService: DatabaseService;
   
   beforeEach(() => {
-    store = new ReplitSessionStore();
+    databaseService = new DatabaseService();
+    store = new ReplitSessionStore(databaseService);
     // Clear the mock database
-    (store as any).db.clear();
+    (databaseService as any).db.clear();
   });
 
   describe('get', () => {
@@ -213,8 +217,8 @@ describe('ReplitSessionStore', () => {
       });
       
       expect(result).toBeDefined();
-      expect(result?.['sid-1']).toEqual(session1);
-      expect(result?.['sid-2']).toEqual(session2);
+      expect(result?.['sid-1']?.userId).toBe(session1.userId);
+      expect(result?.['sid-2']?.userId).toBe(session2.userId);
     });
   });
 

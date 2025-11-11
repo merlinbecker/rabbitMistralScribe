@@ -10,13 +10,13 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import type { IStorage } from "./storage";
-import Database from "@replit/database";
+import type { DatabaseService } from "./databaseService";
 
 export class ReplitStorage implements IStorage {
-  private db: Database;
+  private db: DatabaseService;
 
-  constructor() {
-    this.db = new Database();
+  constructor(databaseService: DatabaseService) {
+    this.db = databaseService;
   }
 
   // Helper methods for key prefixes
@@ -28,50 +28,13 @@ export class ReplitStorage implements IStorage {
 
   // User methods
   async getUser(id: string): Promise<User | undefined> {
-    try {
-      const rawUser = await this.db.get(this.userKey(id));
-      // Replit DB returns {ok: false, error: ...} for missing keys
-      if (!rawUser || (typeof rawUser === 'object' && 'ok' in rawUser && !rawUser.ok)) {
-        return undefined;
-      }
-
-      // Unwrap Replit DB response if needed
-      let user: User;
-      if (typeof rawUser === 'object' && rawUser !== null && 'ok' in rawUser && 'value' in rawUser) {
-        user = typeof rawUser.value === 'string' ? JSON.parse(rawUser.value) : rawUser.value;
-      } else if (typeof rawUser === 'string') {
-        user = JSON.parse(rawUser);
-      } else {
-        user = rawUser as User;
-      }
-
-      return user;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error getting user:', error);
-      return undefined;
-    }
+    return this.db.get<User>(this.userKey(id));
   }
 
   async getUserByGitHubId(githubId: string): Promise<User | undefined> {
-    try {
-      const rawUserId = await this.db.get(this.userGithubKey(githubId));
-      if (!rawUserId || (typeof rawUserId === 'object' && 'ok' in rawUserId && !rawUserId.ok)) {
-        return undefined;
-      }
-
-      // Unwrap if needed
-      let userId: string;
-      if (typeof rawUserId === 'object' && rawUserId !== null && 'ok' in rawUserId && 'value' in rawUserId) {
-        userId = rawUserId.value as string;
-      } else {
-        userId = rawUserId as string;
-      }
-
-      return this.getUser(userId);
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error getting user by GitHub ID:', error);
-      return undefined;
-    }
+    const userId = await this.db.get<string>(this.userGithubKey(githubId));
+    if (!userId) return undefined;
+    return this.getUser(userId);
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -116,27 +79,7 @@ export class ReplitStorage implements IStorage {
 
   // User settings methods
   async getUserSettings(userId: string): Promise<UserSettings | undefined> {
-    try {
-      const rawSettings = await this.db.get(this.settingsKey(userId));
-      if (!rawSettings || (typeof rawSettings === 'object' && 'ok' in rawSettings && !rawSettings.ok)) {
-        return undefined;
-      }
-
-      // Unwrap Replit DB response if needed
-      let settings: UserSettings;
-      if (typeof rawSettings === 'object' && rawSettings !== null && 'ok' in rawSettings && 'value' in rawSettings) {
-        settings = typeof rawSettings.value === 'string' ? JSON.parse(rawSettings.value) : rawSettings.value;
-      } else if (typeof rawSettings === 'string') {
-        settings = JSON.parse(rawSettings);
-      } else {
-        settings = rawSettings as UserSettings;
-      }
-
-      return settings;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error getting user settings:', error);
-      return undefined;
-    }
+    return this.db.get<UserSettings>(this.settingsKey(userId));
   }
 
   async createUserSettings(insertSettings: InsertUserSettings): Promise<UserSettings> {
@@ -206,74 +149,25 @@ export class ReplitStorage implements IStorage {
 
   // Recording methods
   async getRecording(id: string): Promise<Recording | undefined> {
-    const key = `recording:${id}`;
-    const data = await this.db.get(key);
-
-    if (!data) {
-      return undefined;
-    }
-
-    try {
-      // Unwrap Replit DB response if needed - DOUBLE unwrap!
-      let unwrappedData = data;
-
-      // First unwrap: {ok: true, value: {ok: true, value: "..."}}
-      if (typeof data === 'object' && 'ok' in data && 'value' in data) {
-        unwrappedData = data.value;
-      }
-
-      // Second unwrap: might still be wrapped
-      if (typeof unwrappedData === 'object' && 'ok' in unwrappedData && 'value' in unwrappedData) {
-        unwrappedData = unwrappedData.value;
-      }
-
-      // Parse if still string
-      const recording = typeof unwrappedData === 'string'
-        ? JSON.parse(unwrappedData)
-        : unwrappedData;
-
-      return recording;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error parsing recording:', error);
-      return undefined;
-    }
+    return this.db.get<Recording>(this.recordingKey(id));
   }
 
   async getRecordingsByUserId(userId: string): Promise<Recording[]> {
-    try {
-      const recordingIdsData = await this.db.get(this.userRecordingsKey(userId));
+    const recordingIds = await this.db.getArray<string>(this.userRecordingsKey(userId));
+    const recordings: Recording[] = [];
 
-      // Check if recordingIdsData is valid and unwrap if needed
-      let recordingIds: string[] = [];
-      if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
-        // Replit DB wrapped response
-        recordingIds = Array.isArray(recordingIdsData.value) ? recordingIdsData.value : [];
-      } else if (Array.isArray(recordingIdsData)) {
-        // Direct array response
-        recordingIds = recordingIdsData;
-      } else if (!recordingIdsData || (typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && !recordingIdsData.ok)) {
-        // No data or error
-        return [];
+    for (const id of recordingIds) {
+      const recording = await this.getRecording(id);
+      if (recording) {
+        recordings.push(recording);
       }
-
-      const recordings: Recording[] = [];
-
-      for (const id of recordingIds) {
-        const recording = await this.getRecording(id);
-        if (recording) {
-          recordings.push(recording);
-        }
-      }
-
-      return recordings.sort((a, b) => {
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return timeB - timeA; // Most recent first
-      });
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error getting recordings by user:', error);
-      return [];
     }
+
+    return recordings.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA; // Most recent first
+    });
   }
 
   async createRecording(insertRecording: InsertRecording): Promise<Recording> {
@@ -291,83 +185,46 @@ export class ReplitStorage implements IStorage {
       updatedAt: new Date(),
     };
 
-    try {
-      await this.db.set(this.recordingKey(id), recording);
+    await this.db.set(this.recordingKey(id), recording);
 
-      // Add to user's recordings list
-      const userRecordingsKey = this.userRecordingsKey(insertRecording.userId);
-      const recordingIdsData = await this.db.get(userRecordingsKey);
+    // Add to user's recordings list
+    const userRecordingsKey = this.userRecordingsKey(insertRecording.userId);
+    const recordingIds = await this.db.getArray<string>(userRecordingsKey);
+    recordingIds.push(id);
+    await this.db.set(userRecordingsKey, recordingIds);
 
-      // Check if recordingIdsData is valid and unwrap if needed
-      let recordingIds: string[] = [];
-      if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
-        // Replit DB wrapped response
-        recordingIds = Array.isArray(recordingIdsData.value) ? recordingIdsData.value : [];
-      } else if (Array.isArray(recordingIdsData)) {
-        // Direct array response
-        recordingIds = recordingIdsData;
-      }
-
-      recordingIds.push(id);
-      await this.db.set(userRecordingsKey, recordingIds);
-
-      console.log('[REPLIT_STORAGE] Created recording:', { id, userId: insertRecording.userId });
-      return recording;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error creating recording:', error);
-      throw error;
-    }
+    console.log('[REPLIT_STORAGE] Created recording:', { id, userId: insertRecording.userId });
+    return recording;
   }
 
   async updateRecording(id: string, updates: UpdateRecording): Promise<Recording | undefined> {
-    try {
-      const recording = await this.getRecording(id);
-      if (!recording) return undefined;
+    const recording = await this.getRecording(id);
+    if (!recording) return undefined;
 
-      const updatedRecording: Recording = {
-        ...recording,
-        ...updates,
-        updatedAt: new Date(),
-      };
+    const updatedRecording: Recording = {
+      ...recording,
+      ...updates,
+      updatedAt: new Date(),
+    };
 
-      await this.db.set(this.recordingKey(id), updatedRecording);
-      console.log('[REPLIT_STORAGE] Updated recording:', { id });
-      return updatedRecording;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error updating recording:', error);
-      return undefined;
-    }
+    await this.db.set(this.recordingKey(id), updatedRecording);
+    console.log('[REPLIT_STORAGE] Updated recording:', { id });
+    return updatedRecording;
   }
 
   async deleteRecording(id: string): Promise<boolean> {
-    try {
-      const recording = await this.getRecording(id);
-      if (!recording) return false;
+    const recording = await this.getRecording(id);
+    if (!recording) return false;
 
-      await this.db.delete(this.recordingKey(id));
+    await this.db.delete(this.recordingKey(id));
 
-      // Remove from user's recordings list
-      const userRecordingsKey = this.userRecordingsKey(recording.userId);
-      const recordingIdsData = await this.db.get(userRecordingsKey);
+    // Remove from user's recordings list
+    const userRecordingsKey = this.userRecordingsKey(recording.userId);
+    const recordingIds = await this.db.getArray<string>(userRecordingsKey);
+    const updatedIds = recordingIds.filter((rid: string) => rid !== id);
+    await this.db.set(userRecordingsKey, updatedIds);
 
-      // Check if recordingIdsData is valid and unwrap if needed
-      let recordingIds: string[] = [];
-      if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
-        // Replit DB wrapped response
-        recordingIds = Array.isArray(recordingIdsData.value) ? recordingIdsData.value : [];
-      } else if (Array.isArray(recordingIdsData)) {
-        // Direct array response
-        recordingIds = recordingIdsData;
-      }
-
-      const updatedIds = recordingIds.filter((rid: string) => rid !== id);
-      await this.db.set(userRecordingsKey, updatedIds);
-
-      console.log('[REPLIT_STORAGE] Deleted recording:', { id });
-      return true;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error deleting recording:', error);
-      return false;
-    }
+    console.log('[REPLIT_STORAGE] Deleted recording:', { id });
+    return true;
   }
 }

@@ -1,12 +1,18 @@
-import { JobQueue } from './jobQueue';
-import { storage } from './storage';
-import Database from "@replit/database";
+import type { JobQueue } from './jobQueue';
+import type { IStorage } from './storage';
 
 export class TranscriptionWorker {
-  private static isRunning = false;
-  private static isProcessing = false;
+  private isRunning = false;
+  private isProcessing = false;
+  private jobQueue: JobQueue;
+  private storage: IStorage;
 
-  static start(): void {
+  constructor(jobQueue: JobQueue, storage: IStorage) {
+    this.jobQueue = jobQueue;
+    this.storage = storage;
+  }
+
+  start(): void {
     if (this.isRunning) {
       console.log('[WORKER] ⚠️ Already running - ignoring start request');
       console.log('[WORKER] Current state:', {
@@ -27,7 +33,7 @@ export class TranscriptionWorker {
     });
   }
 
-  static stop(): void {
+  stop(): void {
     console.log('[WORKER] 🛑 Stopping worker...');
     console.log('[WORKER] State before stop:', {
       isRunning: this.isRunning,
@@ -38,7 +44,7 @@ export class TranscriptionWorker {
   }
 
   // Called when a new job is enqueued
-  static async notifyNewJob(): Promise<void> {
+  async notifyNewJob(): Promise<void> {
     console.log('[WORKER] 🔔 notifyNewJob() called');
     console.log('[WORKER] Current state:', {
       isRunning: this.isRunning,
@@ -62,7 +68,7 @@ export class TranscriptionWorker {
     await this.processQueue();
   }
 
-  private static async processQueue(): Promise<void> {
+  private async processQueue(): Promise<void> {
     console.log('[WORKER] 🚀 processQueue() started');
     console.log('[WORKER] Setting isProcessing flag to true');
     
@@ -76,7 +82,7 @@ export class TranscriptionWorker {
       // Process jobs until queue is empty
       while (this.isRunning) {
         console.log(`[WORKER] Loop iteration ${jobsProcessed + 1} - fetching next job from queue`);
-        const job = await JobQueue.dequeue();
+        const job = await this.jobQueue.dequeue();
 
         if (!job) {
           // Queue is empty
@@ -99,7 +105,7 @@ export class TranscriptionWorker {
           const startTime = Date.now();
           
           await this.transcribeRecording(job.recordingId, job.userId);
-          await JobQueue.markCompleted(job.id);
+          await this.jobQueue.markCompleted(job.id);
           
           const duration = Date.now() - startTime;
           console.log(`[WORKER] ✅ Job completed successfully: ${job.id}`);
@@ -113,20 +119,20 @@ export class TranscriptionWorker {
           if (job.attempts < 3) {
             // Requeue for retry
             console.log(`[WORKER] 🔄 Requeuing job ${job.id} for retry (attempt ${job.attempts + 1}/3)`);
-            await JobQueue.requeue(job.id);
+            await this.jobQueue.requeue(job.id);
           } else {
             // Max attempts reached
             console.log(`[WORKER] ⚠️ Max attempts reached for job ${job.id} - marking as failed`);
-            await JobQueue.markFailed(job.id, error instanceof Error ? error.message : 'Unknown error');
+            await this.jobQueue.markFailed(job.id, error instanceof Error ? error.message : 'Unknown error');
 
             // Also mark recording as failed
             console.log(`[WORKER] Updating recording ${job.recordingId} status to 'failed'`);
-            await storage.updateRecording(job.recordingId, { status: 'failed' });
+            await this.storage.updateRecording(job.recordingId, { status: 'failed' });
           }
         }
 
         // Check pending count for logging
-        const pendingCount = await JobQueue.getPendingCount();
+        const pendingCount = await this.jobQueue.getPendingCount();
         console.log(`[WORKER] 📊 Queue status: ${pendingCount} job(s) remaining`);
       }
       
@@ -147,21 +153,21 @@ export class TranscriptionWorker {
     }
   }
 
-  private static async transcribeRecording(recordingId: string, userId: string): Promise<void> {
+  private async transcribeRecording(recordingId: string, userId: string): Promise<void> {
     console.log('[WORKER] Starting transcription for:', recordingId);
 
-    const recording = await storage.getRecording(recordingId);
+    const recording = await this.storage.getRecording(recordingId);
     if (!recording) {
       throw new Error('Recording not found');
     }
 
-    const settings = await storage.getUserSettings(userId);
+    const settings = await this.storage.getUserSettings(userId);
     if (!settings?.mistralApiKey) {
       throw new Error('No Mistral API key configured');
     }
 
     // Update status to transcribing
-    await storage.updateRecording(recordingId, { status: 'transcribing' });
+    await this.storage.updateRecording(recordingId, { status: 'transcribing' });
 
     // Get audio data
     if (!recording.audioUrl) {
@@ -252,7 +258,7 @@ export class TranscriptionWorker {
     }
 
     // Update recording
-    await storage.updateRecording(recordingId, {
+    await this.storage.updateRecording(recordingId, {
       title,
       transcript,
       summary,
@@ -268,10 +274,10 @@ export class TranscriptionWorker {
     console.log('[WORKER] Transcription completed successfully');
   }
 
-  private static async saveToGitHub(recordingId: string, userId: string): Promise<void> {
-    const recording = await storage.getRecording(recordingId);
-    const user = await storage.getUser(userId);
-    const settings = await storage.getUserSettings(userId);
+  private async saveToGitHub(recordingId: string, userId: string): Promise<void> {
+    const recording = await this.storage.getRecording(recordingId);
+    const user = await this.storage.getUser(userId);
+    const settings = await this.storage.getUserSettings(userId);
 
     if (!recording || !user || !settings || !user.accessToken) {
       throw new Error('Missing required data for GitHub save');
@@ -327,7 +333,7 @@ ${recording.transcript || 'Kein Transkript verfügbar'}
     }
 
     const fileData = await createFileResponse.json();
-    await storage.updateRecording(recordingId, {
+    await this.storage.updateRecording(recordingId, {
       githubFileUrl: fileData.content.html_url,
     });
   }

@@ -197,6 +197,16 @@ export class MemStorage implements IStorage {
   }
 }
 
+import { DatabaseService } from "./databaseService";
 import { ReplitStorage } from "./replitStorage";
+import Database from "@replit/database";
 
-export const storage = new ReplitStorage();
+// Create singleton DatabaseService instance
+const db = new Database();
+const databaseService = new DatabaseService(db);
+
+// Create storage instance with DatabaseService
+export const storage = new ReplitStorage(databaseService);
+
+// Export databaseService for use in other parts of the application
+export { databaseService };
