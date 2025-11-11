@@ -206,10 +206,18 @@ export class ReplitStorage implements IStorage {
 
   async getRecordingsByUserId(userId: string): Promise<Recording[]> {
     try {
-      const recordingIds = await this.db.get(this.userRecordingsKey(userId));
+      const recordingIdsData = await this.db.get(this.userRecordingsKey(userId));
       
-      // Check if recordingIds is valid (not an error object)
-      if (!recordingIds || (typeof recordingIds === 'object' && 'ok' in recordingIds && !recordingIds.ok)) {
+      // Check if recordingIdsData is valid and unwrap if needed
+      let recordingIds: string[] = [];
+      if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
+        // Replit DB wrapped response
+        recordingIds = Array.isArray(recordingIdsData.value) ? recordingIdsData.value : [];
+      } else if (Array.isArray(recordingIdsData)) {
+        // Direct array response
+        recordingIds = recordingIdsData;
+      } else if (!recordingIdsData || (typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && !recordingIdsData.ok)) {
+        // No data or error
         return [];
       }
       
