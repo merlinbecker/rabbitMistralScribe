@@ -48,7 +48,7 @@ export class ReplitSessionStore extends session.Store {
       // Validate session structure before saving
       if (!session.cookie || typeof session.cookie !== 'object') {
         console.error('[SESSION_STORE] Invalid session cookie structure, cannot save');
-        callback?(new Error('Invalid session cookie structure'));
+        callback?.(new Error('Invalid session cookie structure'));
         return;
       }
       
