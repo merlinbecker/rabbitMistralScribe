@@ -4,7 +4,7 @@ import session from "express-session";
 import multer from "multer";
 import { storage } from "./storage";
 import { ReplitSessionStore } from "./replitSessionStore";
-import { insertRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
+import { insertRecordingSchema, updateRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Multer setup for file uploads
@@ -480,14 +480,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('[TRANSCRIBE] Summary successful, length:', summary?.length || 0);
 
+      // Generate title (one-line description)
+      console.log('[TRANSCRIBE] Generating title...');
+      const titleResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.mistralApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
+          messages: [
+            {
+              role: 'system',
+              content: 'Du bist ein Assistent, der prägnante Titel erstellt. Erstelle einen einzeiligen Titel (maximal 60 Zeichen) der die Hauptidee zusammenfasst. Antworte nur mit dem Titel, ohne Anführungszeichen oder zusätzlichen Text.'
+            },
+            {
+              role: 'user',
+              content: `Erstelle einen kurzen Titel für diese Notiz:\n\n${transcript}`
+            }
+          ],
+        }),
+      });
+
+      console.log('[TRANSCRIBE] Title API response status:', titleResponse.status);
+
+      let title = 'Audio-Notiz';
+      if (titleResponse.ok) {
+        const titleData = await titleResponse.json();
+        title = titleData.choices[0].message.content.trim();
+        // Ensure title is not too long
+        if (title.length > 60) {
+          title = title.substring(0, 57) + '...';
+        }
+        console.log('[TRANSCRIBE] Title generated:', title);
+      } else {
+        console.error('[TRANSCRIBE] Title generation failed, using default');
+      }
+
       // Update with results
       await storage.updateRecording(recordingId, {
+        title,
         transcript,
         summary,
         status: 'transcribed',
       });
 
-      console.log('[TRANSCRIBE] Recording updated with transcript and summary');
+      console.log('[TRANSCRIBE] Recording updated with title, transcript and summary');
 
       // Save to GitHub if configured
       if (settings.githubRepoOwner && settings.githubRepoName) {
@@ -509,6 +548,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateRecording(recordingId, { status: 'failed' });
     }
   }
+
+  app.patch('/api/recordings/:id', requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const recording = await storage.getRecording(id);
+
+      if (!recording || recording.userId !== req.session.userId) {
+        return res.status(404).json({ error: 'Recording not found' });
+      }
+
+      const updates = updateRecordingSchema.parse(req.body);
+      const updated = await storage.updateRecording(id, updates);
+      
+      res.json(updated);
+    } catch (error) {
+      console.error('Recording update error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: 'Failed to update recording' });
+    }
+  });
 
   app.post('/api/recordings/:id/transcribe', requireAuth, async (req, res) => {
     try {
@@ -586,8 +647,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const summaryData = await summaryResponse.json();
       const summary = summaryData.choices[0].message.content;
 
+      // Generate title (one-line description)
+      const titleResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.mistralApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
+          messages: [
+            {
+              role: 'system',
+              content: 'Du bist ein Assistent, der prägnante Titel erstellt. Erstelle einen einzeiligen Titel (maximal 60 Zeichen) der die Hauptidee zusammenfasst. Antworte nur mit dem Titel, ohne Anführungszeichen oder zusätzlichen Text.'
+            },
+            {
+              role: 'user',
+              content: `Erstelle einen kurzen Titel für diese Notiz:\n\n${transcript}`
+            }
+          ],
+        }),
+      });
+
+      let title = 'Audio-Notiz';
+      if (titleResponse.ok) {
+        const titleData = await titleResponse.json();
+        title = titleData.choices[0].message.content.trim();
+        if (title.length > 60) {
+          title = title.substring(0, 57) + '...';
+        }
+      }
+
       // Update recording with transcript and summary
       await storage.updateRecording(id, {
+        title,
         transcript,
         summary,
         status: 'transcribed',
@@ -621,15 +714,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       throw new Error('GitHub repository not configured');
     }
 
-    // Create markdown content
+    // Create markdown content with frontmatter
     const timestamp = recording.createdAt ? new Date(recording.createdAt).toISOString() : new Date().toISOString();
     const filename = `audio-note-${timestamp.replace(/[:.]/g, '-')}.md`;
 
-    const markdownContent = `# Audio-Notiz vom ${new Date(timestamp).toLocaleString('de-DE')}
+    const markdownContent = `---
+title: "${recording.title || 'Audio-Notiz'}"
+date: ${timestamp}
+duration: ${recording.duration || 0}
+summary: |
+  ${(recording.summary || 'Keine Zusammenfassung verfügbar').split('\n').join('\n  ')}
+---
 
-## Zusammenfassung
-
-${recording.summary || 'Keine Zusammenfassung verfügbar'}
+# ${recording.title || 'Audio-Notiz'}
 
 ## Transkript
 
@@ -637,7 +734,7 @@ ${recording.transcript || 'Kein Transkript verfügbar'}
 
 ---
 
-*Aufnahmedauer: ${recording.duration ? Math.floor(recording.duration / 60) : 0}:${recording.duration ? (recording.duration % 60).toString().padStart(2, '0') : '00'}*
+*Aufnahmedauer: ${recording.duration ? Math.floor(recording.duration / 60) : 0}:${recording.duration ? (recording.duration % 60).toString().padStart(2, '0') : '00'}*  
 *Erstellt: ${new Date(timestamp).toLocaleString('de-DE')}*
 `;
 

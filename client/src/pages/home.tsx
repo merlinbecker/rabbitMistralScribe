@@ -66,9 +66,7 @@ export default function Home() {
       
       for (const recording of pendingRecordings) {
         try {
-          const result = await apiRequest(`/api/recordings/${recording.id}/transcribe`, {
-            method: 'POST',
-          });
+          const result = await apiRequest('POST', `/api/recordings/${recording.id}/transcribe`);
           results.push({ id: recording.id, success: true });
         } catch (error) {
           results.push({ id: recording.id, success: false, error });

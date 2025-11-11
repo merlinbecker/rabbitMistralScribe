@@ -35,10 +35,7 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
 
   const updateRecordingMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<Recording> }) => {
-      return await apiRequest(`/api/recordings/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-      });
+      return await apiRequest('PATCH', `/api/recordings/${id}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
@@ -197,28 +194,35 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
             data-testid={`recording-item-${recording.id}`}
           >
             <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                {recording.audioUrl && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => togglePlayback(recording)}
-                    data-testid={`button-play-${recording.id}`}
-                    className="flex-shrink-0"
-                  >
-                    {isPlaying ? (
-                      <Pause className="w-4 h-4" />
-                    ) : (
-                      <Play className="w-4 h-4" />
-                    )}
-                  </Button>
+              <div className="flex-1 min-w-0">
+                {recording.title && (
+                  <h4 className="text-body font-medium mb-1 truncate" data-testid={`title-${recording.id}`}>
+                    {recording.title}
+                  </h4>
                 )}
-                <span className="text-caption text-muted-foreground truncate">
-                  {recording.createdAt ? formatDistanceToNow(new Date(recording.createdAt), { 
-                    addSuffix: true, 
-                    locale: de 
-                  }) : 'Unbekannt'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {recording.audioUrl && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => togglePlayback(recording)}
+                      data-testid={`button-play-${recording.id}`}
+                      className="flex-shrink-0 h-6 w-6"
+                    >
+                      {isPlaying ? (
+                        <Pause className="w-3 h-3" />
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                    </Button>
+                  )}
+                  <span className="text-caption text-muted-foreground truncate">
+                    {recording.createdAt ? formatDistanceToNow(new Date(recording.createdAt), { 
+                      addSuffix: true, 
+                      locale: de 
+                    }) : 'Unbekannt'}
+                  </span>
+                </div>
               </div>
               {getStatusBadge(recording.status)}
             </div>
@@ -246,10 +250,10 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
               </span>
             </div>
 
-            {recording.transcript && (
-              <p className="text-body mt-2 line-clamp-2 text-foreground">
-                {recording.transcript.substring(0, 100)}
-                {recording.transcript.length > 100 && '...'}
+            {recording.summary && (
+              <p className="text-caption mt-2 line-clamp-2 text-muted-foreground" data-testid={`summary-${recording.id}`}>
+                {recording.summary.substring(0, 120)}
+                {recording.summary.length > 120 && '...'}
               </p>
             )}
 
