@@ -1,10 +1,31 @@
+
 # Recording Workflow
 
 Dieses Dokument beschreibt den vollständigen Ablauf der Audio-Aufnahme-Verarbeitung von der Aufnahme bis zur Speicherung in GitHub.
 
 ## Übersicht
 
-Die Anwendung ermöglicht es Benutzern, Audio-Notizen aufzunehmen, die automatisch transkribiert, zusammengefasst und in einem GitHub-Repository gespeichert werden. Der Workflow ist für Offline-Unterstützung konzipiert und verarbeitet Aufnahmen automatisch, sobald eine Internetverbindung besteht.
+Die Anwendung ermöglicht es Benutzern, Audio-Notizen aufzunehmen, die automatisch transkribiert, zusammengefasst und in einem GitHub-Repository gespeichert werden. Der Workflow ist für Offline-Unterstützung konzipiert und verarbeitet Aufnahmen automatisch über ein **Job Queue System** mit einem **push-basierten Worker**.
+
+## Architektur-Überblick
+
+### Job Queue System
+
+Die Anwendung verwendet ein **Queue-basiertes System** zur asynchronen Verarbeitung von Transkriptions-Aufgaben:
+
+- **JobQueue** (`server/jobQueue.ts`): Verwaltet Transkriptions-Jobs in der Replit Database
+- **TranscriptionWorker** (`server/transcriptionWorker.ts`): Verarbeitet Jobs sequentiell
+- **Push-basiert**: Worker wird benachrichtigt, wenn neue Jobs hinzugefügt werden (kein Polling)
+- **Sequentielle Verarbeitung**: Jobs werden nacheinander abgearbeitet, bis die Queue leer ist
+
+### Job Status-Zustandsmaschine
+
+```
+pending → processing → completed
+    ↓           ↓
+    └─→ failed ←┘
+        (max 3 attempts)
+```
 
 ## Workflow-Schritte
 
@@ -95,7 +116,7 @@ const response = await fetch('/api/recordings', {
 
 **Server-Seite (`server/routes.ts`)**
 
-**4.1 Aufnahme-Erstellung:**
+**4.1 Aufnahme-Erstellung und Job-Enqueuing:**
 
 ```typescript
 app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
@@ -111,81 +132,201 @@ app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res
     status: 'pending',
   });
   
-  // Transkription im Hintergrund starten
-  transcribeRecording(recording.id, userId).catch(console.error);
+  // Job in Queue einreihen
+  await JobQueue.enqueue(recording.id, req.session.userId);
+  
+  // Worker benachrichtigen (push-basiert)
+  TranscriptionWorker.notifyNewJob();
+  
+  return res.json(recording);
 });
 ```
 
-**4.2 Transkription (Hintergrund-Prozess):**
+**4.2 Job Queue Verarbeitung (`server/jobQueue.ts`):**
+
+Die JobQueue verwaltet alle Transkriptions-Jobs:
 
 ```typescript
-async function transcribeRecording(recordingId: string, userId: string) {
-  // 1. Status auf 'transcribing' setzen
-  await storage.updateRecording(recordingId, { status: 'transcribing' });
+// Job hinzufügen
+static async enqueue(recordingId: string, userId: string): Promise<string> {
+  const jobId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const job: TranscriptionJob = {
+    id: jobId,
+    recordingId,
+    userId,
+    status: 'pending',
+    attempts: 0,
+    createdAt: new Date().toISOString(),
+  };
   
-  // 2. Transkription mit Mistral Voxtral API
-  const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${mistralApiKey}` },
-    body: formData,
-  });
+  await db.set(`job:transcription:${jobId}`, JSON.stringify(job));
+  return jobId;
+}
+
+// Nächsten Job abrufen
+static async dequeue(): Promise<TranscriptionJob | null> {
+  const keys = await db.list('job:transcription:');
   
-  const transcript = transcriptionResponse.json().text;
+  for (const key of keys) {
+    const job = JSON.parse(await db.get(key));
+    
+    if (job.status === 'pending' && job.attempts < 3) {
+      job.status = 'processing';
+      job.attempts++;
+      await db.set(key, JSON.stringify(job));
+      return job;
+    }
+  }
+  
+  return null;
 }
 ```
 
-**4.3 Zusammenfassung erstellen:**
+**4.3 TranscriptionWorker - Push-basierte Verarbeitung (`server/transcriptionWorker.ts`):**
+
+Der Worker wird beim Server-Start initialisiert und wartet auf Job-Benachrichtigungen:
+
+```typescript
+export class TranscriptionWorker {
+  private static isRunning = false;
+  private static isProcessing = false;
+
+  // Wird beim Server-Start aufgerufen
+  static start(): void {
+    this.isRunning = true;
+    console.log('[WORKER] ✅ Started - push-based processing enabled');
+  }
+
+  // Wird aufgerufen, wenn ein neuer Job zur Queue hinzugefügt wird
+  static async notifyNewJob(): Promise<void> {
+    if (!this.isRunning || this.isProcessing) {
+      return; // Worker verarbeitet bereits oder ist gestoppt
+    }
+
+    console.log('[WORKER] 🔔 New job notification received, starting processing');
+    await this.processQueue();
+  }
+
+  // Sequentielle Verarbeitung aller Jobs in der Queue
+  private static async processQueue(): Promise<void> {
+    this.isProcessing = true;
+
+    try {
+      // Verarbeite Jobs bis Queue leer ist
+      while (this.isRunning) {
+        const job = await JobQueue.dequeue();
+        
+        if (!job) {
+          console.log('[WORKER] Queue is empty, waiting for new jobs');
+          break; // Queue leer - warte auf Benachrichtigung
+        }
+
+        console.log('[WORKER] Processing job:', job.id);
+
+        try {
+          await this.transcribeRecording(job.recordingId, job.userId);
+          await JobQueue.markCompleted(job.id);
+        } catch (error) {
+          if (job.attempts < 3) {
+            await JobQueue.requeue(job.id);
+          } else {
+            await JobQueue.markFailed(job.id, error.message);
+            await storage.updateRecording(job.recordingId, { status: 'failed' });
+          }
+        }
+      }
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+}
+```
+
+**4.4 Transkription mit Mistral API:**
+
+```typescript
+private static async transcribeRecording(recordingId: string, userId: string): Promise<void> {
+  const recording = await storage.getRecording(recordingId);
+  const settings = await storage.getUserSettings(userId);
+  
+  // Status auf 'transcribing' setzen
+  await storage.updateRecording(recordingId, { status: 'transcribing' });
+  
+  // Audio-Daten vorbereiten
+  const audioData = recording.audioUrl.split(',')[1];
+  const audioBuffer = Buffer.from(audioData, 'base64');
+  
+  // Mistral Voxtral API aufrufen
+  const formData = new FormData();
+  formData.append('file', new Blob([audioBuffer], { type: 'audio/webm' }), 'audio.webm');
+  formData.append('model', 'voxtral-24.02');
+  
+  const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${settings.mistralApiKey}` },
+    body: formData,
+  });
+  
+  const transcript = (await transcriptionResponse.json()).text;
+  
+  // Zusammenfassung und Titel generieren (siehe nächste Schritte)
+  // ...
+}
+```
+
+**4.5 Zusammenfassung erstellen:**
 
 ```typescript
 // Mistral Chat API für Zusammenfassung
 const summaryResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
   method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${settings.mistralApiKey}`,
+    'Content-Type': 'application/json',
+  },
   body: JSON.stringify({
     model: 'mistral-large-latest',
     messages: [
       {
         role: 'system',
-        content: 'Du bist ein Assistent, der Audio-Notizen zusammenfasst...'
+        content: settings.summaryTemplate || 'Du bist ein Assistent, der Audio-Notizen zusammenfasst...'
       },
-      {
-        role: 'user',
-        content: `Bitte fasse diese Notiz zusammen:\n\n${transcript}`
-      }
+      { role: 'user', content: `Bitte fasse diese Notiz zusammen:\n\n${transcript}` }
     ],
   }),
 });
 
-const summary = summaryResponse.json().choices[0].message.content;
+const summary = (await summaryResponse.json()).choices[0].message.content;
 ```
 
-**4.4 Titel generieren:**
+**4.6 Titel generieren:**
 
 ```typescript
-// Mistral Chat API für Titel-Generierung
 const titleResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
   method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${settings.mistralApiKey}`,
+    'Content-Type': 'application/json',
+  },
   body: JSON.stringify({
     model: 'mistral-large-latest',
     messages: [
       {
         role: 'system',
-        content: 'Du bist ein Assistent, der prägnante Titel erstellt. Erstelle einen einzeiligen Titel (maximal 60 Zeichen)...'
+        content: 'Erstelle einen einzeiligen Titel (maximal 60 Zeichen)...'
       },
-      {
-        role: 'user',
-        content: `Erstelle einen kurzen Titel für diese Notiz:\n\n${transcript}`
-      }
+      { role: 'user', content: `Erstelle einen kurzen Titel für diese Notiz:\n\n${transcript}` }
     ],
   }),
 });
 
-let title = titleResponse.json().choices[0].message.content.trim();
+let title = (await titleResponse.json()).choices[0].message.content.trim();
 if (title.length > 60) {
   title = title.substring(0, 57) + '...';
 }
 ```
 
-**4.5 Datenbank aktualisieren:**
+**4.7 Datenbank aktualisieren:**
 
 ```typescript
 await storage.updateRecording(recordingId, {
@@ -194,6 +335,11 @@ await storage.updateRecording(recordingId, {
   summary,
   status: 'transcribed',
 });
+
+// GitHub-Speicherung falls konfiguriert
+if (settings.githubRepoOwner && settings.githubRepoName) {
+  await this.saveToGitHub(recordingId, userId);
+}
 ```
 
 ### 5. Speicherung in GitHub
@@ -247,23 +393,15 @@ await fetch(
 );
 ```
 
-**5.3 GitHub-URL speichern:**
-
-```typescript
-await storage.updateRecording(recordingId, {
-  githubFileUrl: fileData.content.html_url,
-});
-```
-
 ### 6. Client-Aktualisierung
 
 **Client-Seite**
 
 **6.1 Status-Polling:**
 
-- Der Client pollt alle 3 Sekunden den Server
+- Der Client pollt alle 15 Sekunden den Server
 - Überprüft den Status der Aufnahme
-- Maximale Polling-Dauer: 2 Minuten (40 Polls)
+- Maximale Polling-Dauer: 4 Minuten (16 Polls)
 
 ```typescript
 const pollInterval = setInterval(async () => {
@@ -272,14 +410,10 @@ const pollInterval = setInterval(async () => {
   
   if (updated?.status === 'transcribed') {
     clearInterval(pollInterval);
-    
-    // Aus IndexedDB löschen
     await indexedDB.deleteRecording(localId);
-    
-    // UI aktualisieren
     queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
   }
-}, 3000);
+}, 15000);
 ```
 
 **6.2 UI-Aktualisierung:**
@@ -289,60 +423,27 @@ const pollInterval = setInterval(async () => {
 - Zusammenfassung wird als Vorschau dargestellt
 - Audio-Aufnahme wird aus IndexedDB gelöscht
 
-**6.3 Anzeige in der Liste:**
-
-```typescript
-<Card>
-  {recording.title && (
-    <h4 className="text-body font-medium truncate">
-      {recording.title}
-    </h4>
-  )}
-  
-  {recording.summary && (
-    <p className="text-caption line-clamp-2">
-      {recording.summary.substring(0, 120)}...
-    </p>
-  )}
-  
-  {getStatusBadge(recording.status)}
-</Card>
-```
-
-## Offline-Unterstützung
-
-### Netzwerk-Überwachung
-
-```typescript
-window.addEventListener('online', async () => {
-  await syncPendingRecordings();
-});
-
-window.addEventListener('offline', () => {
-  toast({ title: 'Verbindung verloren', description: 'Aufnahmen werden lokal gespeichert.' });
-});
-```
-
-### Synchronisation ausstehender Aufnahmen
-
-```typescript
-const syncPendingRecordings = async () => {
-  const pendingRecordings = await indexedDB.getAllRecordings();
-  
-  for (const pending of pendingRecordings) {
-    if (pending.status === 'queued' || pending.status === 'failed') {
-      await uploadRecording(pending.id, pending.audioBlob, pending.duration);
-    }
-  }
-};
-```
-
 ## Datenmodell
+
+### Job Schema
+
+```typescript
+export interface TranscriptionJob {
+  id: string;
+  recordingId: string;
+  userId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  attempts: number;
+  createdAt: string;
+  processedAt?: string;
+  error?: string;
+}
+```
 
 ### Recording Schema
 
 ```typescript
-export const recordings = pgTable("recordings", {
+export const recordings = {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull(),
   audioUrl: text("audio_url"),
@@ -354,11 +455,12 @@ export const recordings = pgTable("recordings", {
   githubFileUrl: text("github_file_url"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}
 ```
 
-### Status-Zustandsmaschine
+### Status-Zustandsmaschinen
 
+**Recording Status:**
 ```
 queued (IndexedDB)
     ↓
@@ -373,6 +475,14 @@ transcribed (Server) → Datei in GitHub gespeichert
 [gelöscht aus IndexedDB]
 ```
 
+**Job Status:**
+```
+pending → processing → completed
+    ↓           ↓
+    └─→ failed ←┘
+     (max 3 Versuche)
+```
+
 ## Fehlerbehandlung
 
 ### Client-seitig
@@ -381,11 +491,31 @@ transcribed (Server) → Datei in GitHub gespeichert
 - **Upload fehlgeschlagen**: Status auf 'failed' in IndexedDB, bleibt für erneuten Versuch gespeichert
 - **Transkription fehlgeschlagen**: Toast-Benachrichtigung mit Hinweis auf API-Schlüssel-Prüfung
 
-### Server-seitig
+### Server-seitig (Job Queue)
 
-- **Fehlende Mistral API-Schlüssel**: Status auf 'failed' setzen
-- **Transkriptions-Fehler**: Fehler protokollieren, Status auf 'failed' setzen
-- **GitHub-Upload-Fehler**: Fehler werfen (Transkript bleibt in DB gespeichert)
+- **Fehlende Mistral API-Schlüssel**: Job als 'failed' markieren
+- **Transkriptions-Fehler**: 
+  - Wenn `attempts < 3`: Job wird zurück in Queue (requeued)
+  - Wenn `attempts >= 3`: Job als 'failed' markieren, Recording-Status auf 'failed' setzen
+- **GitHub-Upload-Fehler**: Job schlägt fehl (Transkript bleibt in DB gespeichert)
+
+### Retry-Mechanismus
+
+```typescript
+try {
+  await this.transcribeRecording(job.recordingId, job.userId);
+  await JobQueue.markCompleted(job.id);
+} catch (error) {
+  if (job.attempts < 3) {
+    // Job erneut versuchen
+    await JobQueue.requeue(job.id);
+  } else {
+    // Maximale Versuche erreicht
+    await JobQueue.markFailed(job.id, error.message);
+    await storage.updateRecording(job.recordingId, { status: 'failed' });
+  }
+}
+```
 
 ## Konfiguration
 
@@ -412,15 +542,54 @@ Für jede Aufnahme werden 3 Mistral API-Aufrufe durchgeführt:
 
 ### Speicherung
 
-- **Audio**: Als base64 in der Datenbank (bei Produktion Cloud-Speicher empfohlen)
-- **IndexedDB**: Temporäre Speicherung für Offline-Unterstützung
+- **Audio**: Als base64 in der Replit Database
+- **IndexedDB**: Temporäre Client-seitige Speicherung für Offline-Unterstützung
 - **GitHub**: Permanente Markdown-Dateien im `audio-notes/` Verzeichnis
+- **Job Queue**: Jobs werden in Replit Database gespeichert und nach 1 Stunde automatisch bereinigt
+
+### Job Queue Limits
+
+- **Maximale Versuche**: 3 pro Job
+- **Cleanup**: Abgeschlossene Jobs werden nach 1 Stunde automatisch gelöscht
+- **Concurrency**: Sequentielle Verarbeitung (ein Job nach dem anderen)
 
 ### Polling
 
-- Intervall: 3 Sekunden
-- Maximale Dauer: 2 Minuten
-- Automatische Bereinigung nach erfolgreicher Transkription
+- **Client-Intervall**: 15 Sekunden
+- **Maximale Dauer**: 4 Minuten (16 Polls)
+- **Automatische Bereinigung**: Nach erfolgreicher Transkription
+
+## Workflow-Diagramm
+
+```
+[Client]                    [Server]                  [Worker]              [External APIs]
+   │                           │                         │                         │
+   │ Upload Recording          │                         │                         │
+   │──────────────────────────>│                         │                         │
+   │                           │ Create Recording        │                         │
+   │                           │ Enqueue Job             │                         │
+   │                           │────────────────────────>│                         │
+   │                           │ Notify Worker           │                         │
+   │                           │─────────────────────────>│                        │
+   │                           │                         │ Dequeue Job            │
+   │                           │                         │ Process Job            │
+   │                           │                         │ Transcribe             │
+   │                           │                         │────────────────────────>│
+   │                           │                         │<────────────────────────│
+   │                           │                         │ Summarize              │
+   │                           │                         │────────────────────────>│
+   │                           │                         │<────────────────────────│
+   │                           │                         │ Generate Title         │
+   │                           │                         │────────────────────────>│
+   │                           │                         │<────────────────────────│
+   │                           │<────────────────────────│ Update Recording        │
+   │                           │                         │ Save to GitHub         │
+   │                           │                         │────────────────────────>│
+   │ Poll Status               │                         │                         │
+   │──────────────────────────>│                         │                         │
+   │<──────────────────────────│                         │                         │
+   │ (status: transcribed)     │                         │                         │
+```
 
 ## Beispiel Markdown-Ausgabe
 
@@ -450,8 +619,10 @@ summary: |
 ## Zukünftige Verbesserungen
 
 - **Cloud-Speicher**: Integration mit S3/Cloudinary für Audio-Dateien
-- **Echtzeit-Updates**: WebSockets statt Polling
-- **Batch-Verarbeitung**: Effizientere Verarbeitung mehrerer Aufnahmen
+- **WebSockets**: Echtzeit-Updates statt Client-Polling
+- **Batch-Verarbeitung**: Parallele Verarbeitung mehrerer Jobs mit Concurrency-Limit
 - **Speaker-Diarization**: Unterscheidung zwischen verschiedenen Sprechern
 - **Tags/Kategorien**: Automatische Kategorisierung basierend auf Inhalt
 - **Suche**: Volltextsuche über alle Transkripte
+- **Job Prioritäten**: Wichtige Jobs können vorgezogen werden
+- **Job Monitoring**: Dashboard zur Überwachung der Queue-Performance
