@@ -136,15 +136,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Set session
       req.session.userId = user.id;
 
-      res.redirect('/');
+      res.redirect('/?authenticated=true');
     } catch (error) {
       console.error('GitHub OAuth error:', error);
       res.redirect('/?error=oauth_failed');
     }
   });
 
-  app.get('/api/auth/user', requireAuth, async (req, res) => {
+  // New endpoint to get session token for localStorage
+  app.get('/api/auth/token', requireAuth, async (req, res) => {
     const user = await storage.getUser(req.session.userId!);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Return a session token (using userId as token for simplicity)
+    // In production, you'd want to generate a proper JWT
+    res.json({ 
+      token: req.session.userId,
+      expiresIn: 30 * 24 * 60 * 60 // 30 days in seconds
+    });
+  });
+
+  app.get('/api/auth/user', async (req, res) => {
+    // Check for Bearer token first
+    const authHeader = req.headers.authorization;
+    let userId = req.session.userId;
+    
+    if (!userId && authHeader?.startsWith('Bearer ')) {
+      userId = authHeader.substring(7); // Remove 'Bearer ' prefix
+    }
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const user = await storage.getUser(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -159,7 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (err) {
         return res.status(500).json({ error: 'Logout failed' });
       }
-      res.json({ success: true });
+      res.json({ success: true, clearToken: true });
     });
   });
 

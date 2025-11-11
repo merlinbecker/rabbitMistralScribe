@@ -5,10 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Check, ExternalLink } from 'lucide-react';
-import { Link } from 'wouter';
+import { ArrowLeft, Check, ExternalLink, LogOut } from 'lucide-react';
+import { Link, useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiRequest, queryClient, clearStoredToken } from '@/lib/queryClient';
 import type { UserSettings, GitHubRepo, UpdateUserSettings } from '@shared/schema';
 import {
   Select,
@@ -20,9 +20,29 @@ import {
 
 export default function Settings() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [apiKey, setApiKey] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [summaryTemplate, setSummaryTemplate] = useState('');
+  
+  const handleLogout = async () => {
+    try {
+      await apiRequest('POST', '/api/auth/logout');
+      clearStoredToken();
+      queryClient.clear();
+      setLocation('/auth');
+      toast({
+        title: 'Abgemeldet',
+        description: 'Sie wurden erfolgreich abgemeldet.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Fehler',
+        description: 'Abmeldung fehlgeschlagen.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // Fetch user settings
   const { data: settings, isLoading: settingsLoading, error: settingsError } = useQuery<UserSettings>({
@@ -228,6 +248,16 @@ export default function Settings() {
           data-testid="button-save-settings"
         >
           {updateSettingsMutation.isPending ? 'Speichern...' : 'Einstellungen speichern'}
+        </Button>
+        
+        <Button
+          onClick={handleLogout}
+          variant="outline"
+          className="w-full h-10 gap-2"
+          data-testid="button-logout"
+        >
+          <LogOut className="w-4 h-4" />
+          Abmelden
         </Button>
       </div>
     </div>
