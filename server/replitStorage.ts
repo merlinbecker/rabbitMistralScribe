@@ -1,6 +1,5 @@
-
-import { 
-  type User, 
+import {
+  type User,
   type InsertUser,
   type UserSettings,
   type InsertUserSettings,
@@ -39,56 +38,60 @@ export class ReplitStorage implements IStorage {
   }
 
   async getUserByGitHubId(githubId: string): Promise<User | undefined> {
-    try {
-      const userId = await this.db.get(this.userGithubKey(githubId));
-      if (!userId) return undefined;
-      return await this.getUser(userId);
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error getting user by GitHub ID:', error);
-      return undefined;
-    }
+    console.log('[REPLIT_STORAGE] Looking up user by GitHub ID:', githubId);
+    const userId = await this.db.get(this.userGithubKey(githubId));
+    console.log('[REPLIT_STORAGE] Found userId for GitHub ID:', { githubId, userId });
+    if (!userId) return undefined;
+    const user = await this.getUser(userId);
+    console.log('[REPLIT_STORAGE] Retrieved user:', { id: user?.id, username: user?.username });
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { 
-      ...insertUser, 
+    const now = new Date();
+    const user: User = {
       id,
-      avatarUrl: insertUser.avatarUrl ?? null,
-      accessToken: insertUser.accessToken ?? null,
+      githubId: insertUser.githubId,
+      username: insertUser.username,
+      avatarUrl: insertUser.avatarUrl,
+      accessToken: insertUser.accessToken,
+      createdAt: now,
+      updatedAt: now,
     };
-    
-    try {
-      await this.db.set(this.userKey(id), user);
-      await this.db.set(this.userGithubKey(insertUser.githubId), id);
-      console.log('[REPLIT_STORAGE] Created user:', { id, githubId: insertUser.githubId });
-      return user;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error creating user:', error);
-      throw error;
-    }
+
+    await this.db.set(this.userKey(id), user);
+    await this.db.set(this.userGithubKey(insertUser.githubId), id);
+
+    console.log('[REPLIT_STORAGE] Created user:', { id, githubId: insertUser.githubId, username: user.username });
+    return user;
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
-    try {
-      const user = await this.getUser(id);
-      if (!user) return undefined;
-      
-      const updatedUser = { ...user, ...updates };
-      await this.db.set(this.userKey(id), updatedUser);
-      console.log('[REPLIT_STORAGE] Updated user:', { id: updatedUser.id, githubId: updatedUser.githubId });
-      return updatedUser;
-    } catch (error) {
-      console.error('[REPLIT_STORAGE] Error updating user:', error);
+    const user = await this.getUser(id);
+    if (!user) {
+      console.log('[REPLIT_STORAGE] User not found for update:', id);
       return undefined;
     }
+
+    const updatedUser: User = {
+      ...user,
+      ...updates,
+      id: user.id, // Ensure ID is preserved
+      updatedAt: new Date(),
+    };
+
+    await this.db.set(this.userKey(id), updatedUser);
+
+    console.log('[REPLIT_STORAGE] Updated user:', { id: updatedUser.id, githubId: updatedUser.githubId, username: updatedUser.username });
+    return updatedUser;
   }
 
   // User settings methods
   async getUserSettings(userId: string): Promise<UserSettings | undefined> {
     try {
       const settings = await this.db.get(this.settingsKey(userId));
-      
+
       console.log('[REPLIT_STORAGE] getUserSettings called for userId:', userId);
       console.log('[REPLIT_STORAGE] Found settings:', settings ? {
         id: settings.id,
@@ -96,7 +99,7 @@ export class ReplitStorage implements IStorage {
         hasMistralKey: !!settings.mistralApiKey,
         mistralKeyLength: settings.mistralApiKey?.length || 0
       } : 'NOT FOUND');
-      
+
       return settings || undefined;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error getting user settings:', error);
@@ -115,16 +118,16 @@ export class ReplitStorage implements IStorage {
       summaryTemplate: insertSettings.summaryTemplate ?? null,
       updatedAt: new Date(),
     };
-    
+
     try {
       await this.db.set(this.settingsKey(insertSettings.userId), settings);
-      
+
       console.log('[REPLIT_STORAGE] Created settings:', {
         id: settings.id,
         userId: settings.userId,
         hasMistralKey: !!settings.mistralApiKey
       });
-      
+
       return settings;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error creating user settings:', error);
@@ -152,16 +155,16 @@ export class ReplitStorage implements IStorage {
         ...updates,
         updatedAt: new Date(),
       };
-      
+
       await this.db.set(this.settingsKey(userId), updatedSettings);
-      
+
       console.log('[REPLIT_STORAGE] Updated settings:', {
         id: updatedSettings.id,
         userId: updatedSettings.userId,
         hasMistralKey: !!updatedSettings.mistralApiKey,
         mistralKeyLength: updatedSettings.mistralApiKey?.length || 0
       });
-      
+
       return updatedSettings;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error updating user settings:', error);
@@ -184,14 +187,14 @@ export class ReplitStorage implements IStorage {
     try {
       const recordingIds = await this.db.get(this.userRecordingsKey(userId)) || [];
       const recordings: Recording[] = [];
-      
+
       for (const id of recordingIds) {
         const recording = await this.getRecording(id);
         if (recording) {
           recordings.push(recording);
         }
       }
-      
+
       return recordings.sort((a, b) => {
         const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -217,16 +220,16 @@ export class ReplitStorage implements IStorage {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    
+
     try {
       await this.db.set(this.recordingKey(id), recording);
-      
+
       // Add to user's recordings list
       const userRecordingsKey = this.userRecordingsKey(insertRecording.userId);
       const recordingIds = await this.db.get(userRecordingsKey) || [];
       recordingIds.push(id);
       await this.db.set(userRecordingsKey, recordingIds);
-      
+
       console.log('[REPLIT_STORAGE] Created recording:', { id, userId: insertRecording.userId });
       return recording;
     } catch (error) {
@@ -245,7 +248,7 @@ export class ReplitStorage implements IStorage {
         ...updates,
         updatedAt: new Date(),
       };
-      
+
       await this.db.set(this.recordingKey(id), updatedRecording);
       console.log('[REPLIT_STORAGE] Updated recording:', { id });
       return updatedRecording;
@@ -259,15 +262,15 @@ export class ReplitStorage implements IStorage {
     try {
       const recording = await this.getRecording(id);
       if (!recording) return false;
-      
+
       await this.db.delete(this.recordingKey(id));
-      
+
       // Remove from user's recordings list
       const userRecordingsKey = this.userRecordingsKey(recording.userId);
       const recordingIds = await this.db.get(userRecordingsKey) || [];
       const updatedIds = recordingIds.filter((rid: string) => rid !== id);
       await this.db.set(userRecordingsKey, updatedIds);
-      
+
       console.log('[REPLIT_STORAGE] Deleted recording:', { id });
       return true;
     } catch (error) {
