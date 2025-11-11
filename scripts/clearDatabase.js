@@ -1,21 +1,22 @@
-
 import Database from "@replit/database";
 
 async function clearDatabase() {
   const db = new Database();
-  
-  console.log('🗑️  Starting database cleanup...');
-  
+
+  console.log("🗑️  Starting database cleanup...");
+
   try {
-    // Get all keys
-    const keys = await db.list();
+    // Get all keys - list() returns a string with keys separated by newlines
+    const keysString = await db.list();
+    const keys = keysString.value ?? [];
+
     console.log(`📊 Found ${keys.length} keys in database`);
-    
+
     if (keys.length === 0) {
-      console.log('✅ Database is already empty');
+      console.log("✅ Database is already empty");
       return;
     }
-    
+
     // Delete all keys
     let deleted = 0;
     for (const key of keys) {
@@ -25,12 +26,11 @@ async function clearDatabase() {
         console.log(`🔄 Deleted ${deleted}/${keys.length} keys...`);
       }
     }
-    
+
     console.log(`✅ Successfully deleted ${deleted} keys from database`);
-    console.log('🎉 Database cleared!');
-    
+    console.log("🎉 Database cleared!");
   } catch (error) {
-    console.error('❌ Error clearing database:', error);
+    console.error("❌ Error clearing database:", error);
     process.exit(1);
   }
 }
