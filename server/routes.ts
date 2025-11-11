@@ -381,13 +381,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('[TRANSCRIBE] Starting transcription for recording:', recordingId, 'userId:', userId);
 
+      // Add a small delay to ensure DB write has completed
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const recording = await storage.getRecording(recordingId);
+      console.log('[TRANSCRIBE] Raw recording object:', JSON.stringify(recording, null, 2));
+      
       if (!recording) {
         console.error('[TRANSCRIBE] Recording not found:', recordingId);
         await storage.updateRecording(recordingId, { status: 'failed' });
         return;
       }
-      console.log('[TRANSCRIBE] Recording loaded successfully:', { id: recording.id, status: recording.status, hasAudio: !!recording.audioUrl });
+      console.log('[TRANSCRIBE] Recording loaded successfully:', { 
+        id: recording.id, 
+        status: recording.status, 
+        hasAudio: !!recording.audioUrl,
+        audioUrlLength: recording.audioUrl?.length || 0,
+        userId: recording.userId
+      });
 
       const settings = await storage.getUserSettings(userId);
       console.log('[TRANSCRIBE] Settings loaded:', { 
