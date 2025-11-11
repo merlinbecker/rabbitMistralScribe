@@ -7,7 +7,7 @@ import { insertRecordingSchema, updateUserSettingsSchema } from "@shared/schema"
 import { z } from "zod";
 
 // Multer setup for file uploads
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB max
 });
@@ -52,24 +52,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GitHub OAuth routes
   app.get('/api/auth/github', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
-    
+
     if (!clientId) {
       return res.status(500).send('GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.');
     }
-    
+
     // Construct the correct redirect URI using the request protocol and host
     const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const redirectUri = `${protocol}://${host}/api/auth/github/callback`;
     const scope = 'repo,user';
-    
+
     const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}`;
     res.redirect(authUrl);
   });
 
   app.get('/api/auth/github/callback', async (req, res) => {
     const { code } = req.query;
-    
+
     if (!code) {
       return res.redirect('/?error=no_code');
     }
@@ -112,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Find or create user
       let user = await storage.getUserByGitHubId(githubUser.id.toString());
-      
+
       if (!user) {
         user = await storage.createUser({
           githubId: githubUser.id.toString(),
@@ -149,10 +149,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     // Return a session token (using userId as token for simplicity)
     // In production, you'd want to generate a proper JWT
-    res.json({ 
+    res.json({
       token: req.session.userId,
       expiresIn: 30 * 24 * 60 * 60 // 30 days in seconds
     });
@@ -162,20 +162,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Check for Bearer token first
     const authHeader = req.headers.authorization;
     let userId = req.session.userId;
-    
+
     if (!userId && authHeader?.startsWith('Bearer ')) {
       userId = authHeader.substring(7); // Remove 'Bearer ' prefix
     }
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     const user = await storage.getUser(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     // Don't send access token to frontend
     const { accessToken, ...safeUser } = user;
     res.json(safeUser);
@@ -208,21 +208,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasGithubRepo: !!(req.body.githubRepoOwner && req.body.githubRepoName),
         hasSummaryTemplate: !!req.body.summaryTemplate
       });
-      
+
       const updates = updateUserSettingsSchema.parse(req.body);
       const settings = await storage.updateUserSettings(req.session.userId!, updates);
-      
+
       if (!settings) {
         console.error('[SETTINGS] Settings not found for user:', req.session.userId);
         return res.status(404).json({ error: 'Settings not found' });
       }
-      
+
       console.log('[SETTINGS] Settings updated successfully:', {
         userId: settings.userId,
         hasMistralKey: !!settings.mistralApiKey,
         mistralKeyLength: settings.mistralApiKey?.length || 0
       });
-      
+
       res.json(settings);
     } catch (error) {
       console.error('[SETTINGS] Update failed:', error);
@@ -265,7 +265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
     try {
       console.log('[UPLOAD] Recording upload started');
-      
+
       if (!req.file) {
         console.error('[UPLOAD] No audio file provided in request');
         return res.status(400).json({ error: 'No audio file provided' });
@@ -278,13 +278,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const duration = parseInt(req.body.duration || '0');
-      
+
       // Store audio file as base64 (in production, would use cloud storage)
       const audioBase64 = req.file.buffer.toString('base64');
       const audioUrl = `data:${req.file.mimetype};base64,${audioBase64}`;
-      
+
       console.log('[UPLOAD] Audio encoded to base64, length:', audioBase64.length);
-      
+
       // Create recording entry with audio
       const recording = await storage.createRecording({
         userId: req.session.userId!,
@@ -315,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function transcribeRecording(recordingId: string, userId: string) {
     try {
       console.log('[TRANSCRIBE] Starting transcription for recording:', recordingId);
-      
+
       const recording = await storage.getRecording(recordingId);
       if (!recording) {
         console.error('[TRANSCRIBE] Recording not found:', recordingId);
@@ -342,19 +342,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[TRANSCRIBE] Extracting audio data from URL');
       const audioData = recording.audioUrl.split(',')[1];
       const audioBuffer = Buffer.from(audioData, 'base64');
-      
+
       console.log('[TRANSCRIBE] Audio buffer created, size:', audioBuffer.length);
 
       // Call Mistral Voxtral API
+      const mistralSTTModel = process.env.MISTRAL_STT_MODEL || 'voxtral-24.02';
       const formData = new FormData();
       const blob = new Blob([audioBuffer], { type: 'audio/webm' });
       formData.append('file', blob, 'audio.webm');
-      formData.append('model', 'voxtral-24.02');
+      formData.append('model', mistralSTTModel);
 
       console.log('[TRANSCRIBE] Sending request to Mistral API:', {
         blobSize: blob.size,
         blobType: blob.type,
-        model: 'voxtral-24.02'
+        model: mistralSTTModel
       });
 
       const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
@@ -395,7 +396,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'mistral-large-latest',
+          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
           messages: [
             {
               role: 'system',
@@ -483,9 +484,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const audioBuffer = Buffer.from(audioData, 'base64');
 
       // Call Mistral Voxtral API for transcription
+      const mistralSTTModel = process.env.MISTRAL_STT_MODEL || 'voxtral-24.02';
       const formData = new FormData();
       formData.append('file', new Blob([audioBuffer]), 'audio.webm');
-      formData.append('model', 'voxtral-24.02');
+      formData.append('model', mistralSTTModel);
 
       const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
         method: 'POST',
@@ -510,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'mistral-large-latest',
+          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
           messages: [
             {
               role: 'system',
@@ -569,7 +571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Create markdown content
     const timestamp = recording.createdAt ? new Date(recording.createdAt).toISOString() : new Date().toISOString();
     const filename = `audio-note-${timestamp.replace(/[:.]/g, '-')}.md`;
-    
+
     const markdownContent = `# Audio-Notiz vom ${new Date(timestamp).toLocaleString('de-DE')}
 
 ## Zusammenfassung
@@ -610,7 +612,7 @@ ${recording.transcript || 'Kein Transkript verfügbar'}
     }
 
     const fileData = await createFileResponse.json();
-    
+
     // Update recording with GitHub URL
     await storage.updateRecording(recordingId, {
       githubFileUrl: fileData.content.html_url,
