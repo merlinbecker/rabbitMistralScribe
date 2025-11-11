@@ -172,7 +172,7 @@ export default function Home() {
 
     const interval = setInterval(() => {
       recordingsQueryRefetch();
-    }, 5000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [isPollingActive]);
