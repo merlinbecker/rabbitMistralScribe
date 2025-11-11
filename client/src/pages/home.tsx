@@ -188,10 +188,22 @@ export default function Home() {
       };
 
       mediaRecorder.onstop = async () => {
+        console.log('[CLIENT] ========================================');
+        console.log('[CLIENT] MediaRecorder onstop event fired');
+        console.log('[CLIENT] Audio chunks collected:', audioChunksRef.current.length);
+        console.log('[CLIENT] Recording time:', recordingTime);
+        console.log('[CLIENT] ========================================');
+        
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        console.log('[CLIENT] Audio Blob created:', {
+          size: audioBlob.size,
+          type: audioBlob.type
+        });
 
         // Save to IndexedDB for offline support
+        console.log('[CLIENT] Calling saveRecordingLocally...');
         await saveRecordingLocally(audioBlob, recordingTime);
+        console.log('[CLIENT] saveRecordingLocally completed');
 
         // Clean up
         stream.getTracks().forEach(track => track.stop());
@@ -201,6 +213,10 @@ export default function Home() {
           title: 'Aufnahme gespeichert',
           description: 'Die Aufnahme wird verarbeitet...',
         });
+        
+        console.log('[CLIENT] ========================================');
+        console.log('[CLIENT] onstop cleanup completed');
+        console.log('[CLIENT] ========================================');
       };
 
       mediaRecorder.start(100); // Collect data every 100ms for real-time visualization
@@ -222,9 +238,17 @@ export default function Home() {
   };
 
   const stopRecording = () => {
+    console.log('[CLIENT] ========================================');
+    console.log('[CLIENT] stopRecording() called');
+    console.log('[CLIENT] isRecording:', isRecording);
+    console.log('[CLIENT] mediaRecorder exists:', !!mediaRecorderRef.current);
+    console.log('[CLIENT] ========================================');
+    
     if (mediaRecorderRef.current && isRecording) {
+      console.log('[CLIENT] Stopping MediaRecorder...');
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      console.log('[CLIENT] MediaRecorder stopped, onstop event should fire');
     }
   };
 
@@ -237,10 +261,18 @@ export default function Home() {
   };
 
   const saveRecordingLocally = async (audioBlob: Blob, duration: number) => {
+    console.log('[CLIENT] ========================================');
+    console.log('[CLIENT] saveRecordingLocally() called');
+    console.log('[CLIENT] Blob size:', audioBlob.size);
+    console.log('[CLIENT] Duration:', duration);
+    console.log('[CLIENT] ========================================');
+    
     const recordingId = crypto.randomUUID();
+    console.log('[CLIENT] Generated recording ID:', recordingId);
 
     try {
       // Always save to IndexedDB first
+      console.log('[CLIENT] Saving to IndexedDB...');
       await indexedDB.addRecording({
         id: recordingId,
         audioBlob,
@@ -249,19 +281,30 @@ export default function Home() {
         status: 'queued',
       });
 
-      console.log('[CLIENT] Recording saved to IndexedDB:', recordingId);
+      console.log('[CLIENT] ✅ Recording saved to IndexedDB:', recordingId);
 
       // If online, try to upload immediately
+      console.log('[CLIENT] Checking network status...');
+      console.log('[CLIENT] navigator.onLine:', navigator.onLine);
+      
       if (navigator.onLine) {
+        console.log('[CLIENT] ========================================');
+        console.log('[CLIENT] Network is online - starting upload');
+        console.log('[CLIENT] ========================================');
         await uploadRecording(recordingId, audioBlob, duration);
       } else {
+        console.log('[CLIENT] Network is offline - skipping upload');
         toast({
           title: 'Aufnahme gespeichert',
           description: 'Wird hochgeladen, sobald Verbindung besteht.',
         });
       }
     } catch (error) {
-      console.error('[CLIENT] Error saving recording to IndexedDB:', error);
+      console.error('[CLIENT] ========================================');
+      console.error('[CLIENT] ❌ Error saving recording');
+      console.error('[CLIENT] Error:', error);
+      console.error('[CLIENT] Stack:', error instanceof Error ? error.stack : 'No stack');
+      console.error('[CLIENT] ========================================');
 
       toast({
         title: 'Speicherfehler',
@@ -272,26 +315,50 @@ export default function Home() {
   };
 
   const uploadRecording = async (localId: string, audioBlob: Blob, duration: number) => {
+    console.log('[CLIENT] ========================================');
+    console.log('[CLIENT] uploadRecording() called');
+    console.log('[CLIENT] Local ID:', localId);
+    console.log('[CLIENT] Timestamp:', new Date().toISOString());
+    console.log('[CLIENT] ========================================');
+    
     try {
       // Mark as uploading
+      console.log('[CLIENT] Updating IndexedDB status to uploading...');
       await indexedDB.updateRecording(localId, { status: 'uploading' });
+      console.log('[CLIENT] ✅ IndexedDB status updated');
 
-      console.log('[CLIENT] Starting recording upload:', {
+      console.log('[CLIENT] Recording upload details:', {
         localId,
         blobSize: audioBlob.size,
         blobType: audioBlob.type,
         duration
       });
 
+      console.log('[CLIENT] Creating FormData...');
       const formData = new FormData();
       formData.append('audio', audioBlob);
       formData.append('duration', duration.toString());
+      console.log('[CLIENT] ✅ FormData created');
 
+      console.log('[CLIENT] ========================================');
+      console.log('[CLIENT] 🚀 SENDING FETCH REQUEST TO /api/recordings');
+      console.log('[CLIENT] Method: POST');
+      console.log('[CLIENT] Credentials: include');
+      console.log('[CLIENT] Body: FormData with audio and duration');
+      console.log('[CLIENT] ========================================');
+      
       const response = await fetch('/api/recordings', {
         method: 'POST',
         credentials: 'include',
         body: formData,
       });
+      
+      console.log('[CLIENT] ========================================');
+      console.log('[CLIENT] 📥 FETCH RESPONSE RECEIVED');
+      console.log('[CLIENT] Status:', response.status);
+      console.log('[CLIENT] Status Text:', response.statusText);
+      console.log('[CLIENT] OK:', response.ok);
+      console.log('[CLIENT] ========================================');
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
