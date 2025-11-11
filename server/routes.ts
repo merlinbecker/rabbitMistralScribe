@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import session from "express-session";
 import multer from "multer";
 import { storage } from "./storage";
+import { ReplitSessionStore } from "./replitSessionStore";
 import { insertRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
 import { z } from "zod";
 
@@ -19,11 +20,39 @@ declare module 'express-session' {
   }
 }
 
-// Auth middleware
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
+// Auth middleware with Bearer token support
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  let userId = req.session.userId;
+  
+  // Check for Bearer token if session is not available
+  if (!userId) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      userId = authHeader.substring(7);
+      console.log('[AUTH] Using Bearer token for auth, userId:', userId);
+    }
   }
+  
+  if (!userId) {
+    console.log('[AUTH] No authentication found - session userId:', req.session.userId, 'sessionID:', req.sessionID);
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      details: 'No session or valid Bearer token found'
+    });
+  }
+  
+  // Verify user exists
+  const user = await storage.getUser(userId);
+  if (!user) {
+    console.log('[AUTH] User not found for userId:', userId);
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      details: 'User not found'
+    });
+  }
+  
+  // Store userId in session for consistency
+  req.session.userId = userId;
   next();
 }
 
@@ -35,9 +64,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.sendFile('service-worker.js', { root: './public' });
   });
 
-  // Session configuration
+  // Session configuration with Replit Database Store
   app.use(
     session({
+      store: new ReplitSessionStore(),
       secret: process.env.SESSION_SECRET || 'audio-notes-secret-key',
       resave: false,
       saveUninitialized: false,
@@ -147,7 +177,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.redirect('/?error=session_failed');
         }
         console.log('[AUTH] Session saved successfully for user:', user.id);
-        res.redirect('/?authenticated=true');
+        console.log('[AUTH] SessionID:', req.sessionID);
+        // Redirect with token in URL for client to store
+        res.redirect(`/?authenticated=true&token=${encodeURIComponent(user.id)}`);
       });
     } catch (error) {
       console.error('GitHub OAuth error:', error);

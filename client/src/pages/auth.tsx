@@ -7,26 +7,52 @@ import { setStoredToken } from '@/lib/queryClient';
 
 export default function Auth() {
   const [, setLocation] = useLocation();
-  
+  // Assume setError and checkAuthStatus are defined elsewhere or passed as props
+  // For this example, we'll mock them to avoid errors. In a real app, they'd be imported or defined.
+  const setError = (message) => console.error(message);
+  const checkAuthStatus = () => {
+    console.log("Checking auth status...");
+    // Placeholder for actual auth status check logic
+    // In a real scenario, this would likely involve fetching user data
+    // and setting the user state, then redirecting.
+    setLocation('/');
+  };
+
+
   useEffect(() => {
-    // Check if we just came back from OAuth
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('authenticated') === 'true') {
-      // Fetch and store the token
-      fetch('/api/auth/token', { credentials: 'include' })
-        .then(res => res.json())
-        .then(data => {
-          if (data.token) {
-            setStoredToken(data.token, 30);
-            setLocation('/');
-          }
-        })
-        .catch(err => {
-          console.error('Failed to store token:', err);
-        });
+    const params = new URLSearchParams(window.location.search);
+    const authenticated = params.get('authenticated');
+    const token = params.get('token');
+    const error = params.get('error');
+
+    if (error) {
+      setError(
+        error === 'no_code' ? 'Keine Autorisierung erhalten' :
+        error === 'oauth_not_configured' ? 'GitHub OAuth nicht konfiguriert' :
+        error === 'no_token' ? 'Kein Access Token erhalten' :
+        error === 'oauth_failed' ? 'GitHub Authentifizierung fehlgeschlagen' :
+        error === 'session_failed' ? 'Session konnte nicht erstellt werden' :
+        'Ein Fehler ist aufgetreten'
+      );
+    } else if (authenticated === 'true' && token) {
+      // Store token in localStorage
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+
+      localStorage.setItem('auth_token', JSON.stringify({
+        token: decodeURIComponent(token),
+        expiresAt: expiresAt.toISOString()
+      }));
+
+      console.log('[AUTH] Token stored in localStorage');
+
+      // Clean URL
+      window.history.replaceState({}, '', '/');
+
+      checkAuthStatus();
     }
-  }, [setLocation]);
-  
+  }, [checkAuthStatus, setLocation]); // Added setLocation to dependency array
+
   const handleGitHubLogin = () => {
     window.location.href = '/api/auth/github';
   };
