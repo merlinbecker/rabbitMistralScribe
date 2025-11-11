@@ -139,11 +139,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create session and save it
       req.session.userId = user.id;
+      
+      // Save session and wait for it to complete before redirecting
       req.session.save((err) => {
         if (err) {
           console.error('[AUTH] Session save error:', err);
+          return res.redirect('/?error=session_failed');
         }
-        res.redirect('/');
+        console.log('[AUTH] Session saved successfully for user:', user.id);
+        res.redirect('/?authenticated=true');
       });
     } catch (error) {
       console.error('GitHub OAuth error:', error);
@@ -167,23 +171,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get('/api/auth/user', async (req, res) => {
+    console.log('[AUTH] /api/auth/user called');
+    console.log('[AUTH] Session ID:', req.sessionID);
+    console.log('[AUTH] Session userId:', req.session.userId);
+    
     // Check for Bearer token first
     const authHeader = req.headers.authorization;
     let userId = req.session.userId;
 
     if (!userId && authHeader?.startsWith('Bearer ')) {
       userId = authHeader.substring(7); // Remove 'Bearer ' prefix
+      console.log('[AUTH] Using Bearer token, userId:', userId);
     }
 
     if (!userId) {
+      console.log('[AUTH] No userId found in session or token');
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const user = await storage.getUser(userId);
     if (!user) {
+      console.log('[AUTH] User not found for userId:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
+    console.log('[AUTH] User found:', { id: user.id, username: user.username });
+    
     // Don't send access token to frontend
     const { accessToken, ...safeUser } = user;
     res.json(safeUser);
