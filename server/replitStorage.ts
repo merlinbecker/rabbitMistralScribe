@@ -76,7 +76,7 @@ export class ReplitStorage implements IStorage {
       
       const updatedUser = { ...user, ...updates };
       await this.db.set(this.userKey(id), updatedUser);
-      console.log('[REPLIT_STORAGE] Updated user:', { id });
+      console.log('[REPLIT_STORAGE] Updated user:', { id: updatedUser.id, githubId: updatedUser.githubId });
       return updatedUser;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error updating user:', error);

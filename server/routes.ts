@@ -129,14 +129,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           githubRepoName: null,
         });
       } else {
-        // Update access token
-        await storage.updateUser(user.id, { accessToken });
+        // Update access token if it changed
+        if (user.accessToken !== accessToken) {
+          await storage.updateUser(user.id, {
+            accessToken: accessToken
+          });
+        }
       }
 
-      // Set session
+      // Create session and save it
       req.session.userId = user.id;
-
-      res.redirect('/?authenticated=true');
+      req.session.save((err) => {
+        if (err) {
+          console.error('[AUTH] Session save error:', err);
+        }
+        res.redirect('/');
+      });
     } catch (error) {
       console.error('GitHub OAuth error:', error);
       res.redirect('/?error=oauth_failed');
