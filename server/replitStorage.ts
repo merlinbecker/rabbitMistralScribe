@@ -29,11 +29,22 @@ export class ReplitStorage implements IStorage {
   // User methods
   async getUser(id: string): Promise<User | undefined> {
     try {
-      const user = await this.db.get(this.userKey(id));
+      const rawUser = await this.db.get(this.userKey(id));
       // Replit DB returns {ok: false, error: ...} for missing keys
-      if (!user || (typeof user === 'object' && 'ok' in user && !user.ok)) {
+      if (!rawUser || (typeof rawUser === 'object' && 'ok' in rawUser && !rawUser.ok)) {
         return undefined;
       }
+
+      // Unwrap Replit DB response if needed
+      let user: User;
+      if (typeof rawUser === 'object' && rawUser !== null && 'ok' in rawUser && 'value' in rawUser) {
+        user = typeof rawUser.value === 'string' ? JSON.parse(rawUser.value) : rawUser.value;
+      } else if (typeof rawUser === 'string') {
+        user = JSON.parse(rawUser);
+      } else {
+        user = rawUser as User;
+      }
+
       return user;
     } catch (error) {
       console.error('[REPLIT_STORAGE] Error getting user:', error);
