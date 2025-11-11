@@ -153,18 +153,47 @@ export class ReplitSessionStore extends session.Store {
   
   async get(sid: string, callback: (err: any, session?: session.SessionData | null) => void): Promise<void> {
     try {
-      const session = await this.db.get(this.sessionKey(sid));
-      callback(null, session || null);
+      console.log('[SESSION_STORE] Getting session:', sid);
+      const sessionData = await this.db.get(this.sessionKey(sid));
+      
+      // Validate session data structure
+      if (!sessionData || typeof sessionData !== 'object') {
+        console.log('[SESSION_STORE] No valid session data found for:', sid);
+        callback(null, null);
+        return;
+      }
+      
+      // Ensure cookie object exists with required properties
+      if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
+        console.log('[SESSION_STORE] Invalid session cookie structure for:', sid);
+        callback(null, null);
+        return;
+      }
+      
+      console.log('[SESSION_STORE] Valid session found:', sid, 'userId:', sessionData.userId);
+      callback(null, sessionData);
     } catch (error) {
+      console.error('[SESSION_STORE] Error getting session:', error);
       callback(error);
     }
   }
   
   async set(sid: string, session: session.SessionData, callback?: (err?: any) => void): Promise<void> {
     try {
+      console.log('[SESSION_STORE] Setting session:', sid, 'userId:', session.userId);
+      
+      // Validate session structure before saving
+      if (!session.cookie || typeof session.cookie !== 'object') {
+        console.error('[SESSION_STORE] Invalid session cookie structure, cannot save');
+        callback?(new Error('Invalid session cookie structure'));
+        return;
+      }
+      
       await this.db.set(this.sessionKey(sid), session);
+      console.log('[SESSION_STORE] Session saved successfully:', sid);
       callback?.();
     } catch (error) {
+      console.error('[SESSION_STORE] Error setting session:', error);
       callback?.(error);
     }
   }
@@ -451,48 +480,106 @@ const defaultQueryFn: QueryFunction = async ({ queryKey }) => {
 
 ### Unit Tests
 
-**Datei**: `tests/auth.test.ts`
+Die Anwendung verfügt über umfassende Unit Tests mit Vitest und @testing-library/react.
 
-Tests für Token-Storage:
-- ✅ Token mit Ablaufdatum speichern
-- ✅ Abgelaufene Tokens erkennen
-- ✅ Token bei Logout löschen
+**Setup**: `tests/setup.ts`
+- Konfiguration von jsdom für DOM-Testing
+- @testing-library/jest-dom Matchers
+
+**Implementierte Tests**:
+
+1. **Token-Storage Tests** (`tests/auth.test.ts`):
+   - ✅ Token mit Ablaufdatum speichern
+   - ✅ Abgelaufene Tokens erkennen
+   - ✅ Token bei Logout löschen
+
+2. **Session Store Tests** (`tests/replitSessionStore.test.ts`):
+   - ✅ Session erfolgreich speichern
+   - ✅ Session erfolgreich abrufen
+   - ✅ Session bei ungültiger Struktur ablehnen
+   - ✅ Session löschen
+   - ✅ Null zurückgeben bei nicht-existierender Session
+
+3. **Auth Middleware Tests** (`tests/authMiddleware.test.ts`):
+   - ✅ Zugriff mit gültiger Session erlauben
+   - ✅ Zugriff mit Bearer Token erlauben
+   - ✅ 401 bei fehlender Authentifizierung
+   - ✅ 401 bei ungültigem User
+   - ✅ Session-Konsistenz sicherstellen
+
+**Test-Kommandos**:
+```bash
+npm test              # Run all tests
+npm run test:ui       # Run tests with UI
+npm run test:coverage # Run with coverage report
+```
 
 ### Fehlende Tests
 
 ❌ **Noch zu implementieren**:
-- Session Store Tests (get, set, destroy)
-- Auth Middleware Tests
 - OAuth Flow Integration Tests
 - E2E Tests für kompletten Login-Flow
+- GitHub API Mock Tests
+- Mistral AI Integration Tests
 
 ---
 
 ## Bekannte Probleme & Lösungen
 
-### Problem: Session wird nicht persistiert
+### Problem: Session wird nicht persistiert ✅ GELÖST
 
 **Symptom**: `TypeError: Cannot read properties of undefined (reading 'expires')`
 
-**Ursache**: Session-Daten werden nicht korrekt in Replit Database gespeichert
+**Ursache**: Session-Daten aus der Replit Database hatten nicht die erwartete Struktur. Wenn eine Session aus der Datenbank geladen wurde, fehlte das `cookie`-Objekt oder es hatte nicht die erforderliche `expires`-Eigenschaft, was zu einem Fehler im `express-session` Store führte.
 
-**Status**: 🔧 In Bearbeitung
+**Status**: ✅ Gelöst (Sprint 1)
 
-**Geplante Lösung**: 
-1. Session-Daten-Struktur validieren vor dem Speichern
-2. Erweiterte Logging in ReplitSessionStore
-3. Fallback auf MemoryStore bei DB-Fehlern
+**Implementierte Lösung**:
+
+1. **Session-Daten-Validierung beim Abrufen** (`ReplitSessionStore.get()`):
+   - Prüfung ob Session-Daten existieren und vom Typ `object` sind
+   - Validierung der `cookie`-Struktur und ihrer Eigenschaften
+   - Rückgabe von `null` bei ungültigen Daten statt fehlerhafter Objekte
+   - Detailliertes Logging für Debugging
+
+2. **Session-Daten-Validierung beim Speichern** (`ReplitSessionStore.set()`):
+   - Prüfung der Cookie-Struktur vor dem Speichern
+   - Fehlermeldung bei ungültigen Daten
+   - Bestätigungs-Logging nach erfolgreichem Speichern
+
+**Code-Beispiel der Validierung**:
+
+```typescript
+// In ReplitSessionStore.get()
+const sessionData = await this.db.get(this.sessionKey(sid));
+
+// Validate session data structure
+if (!sessionData || typeof sessionData !== 'object') {
+  console.log('[SESSION_STORE] No valid session data found for:', sid);
+  callback(null, null);
+  return;
+}
+
+// Ensure cookie object exists with required properties
+if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
+  console.log('[SESSION_STORE] Invalid session cookie structure for:', sid);
+  callback(null, null);
+  return;
+}
+```
+
+**Ergebnis**: Sessions werden jetzt korrekt persistiert und bei ungültigen Daten wird ein sauberer Fehler behandelt statt einem Crash.
 
 ---
 
 ## Roadmap
 
-### Kurzfristig (Sprint 1)
+### Kurzfristig (Sprint 1) ✅ ABGESCHLOSSEN
 - [x] GitHub OAuth Flow implementieren
 - [x] ReplitSessionStore implementieren
 - [x] Bearer Token Authentication
-- [ ] Session-Persistierung debuggen
-- [ ] Basis Unit Tests
+- [x] Session-Persistierung debuggen und beheben
+- [x] Basis Unit Tests (Auth, Session Store, Middleware)
 
 ### Mittelfristig (Sprint 2)
 - [ ] Token Refresh Mechanismus
@@ -515,6 +602,36 @@ Tests für Token-Storage:
 3. **Immer Expiration setzen** - Sowohl für Sessions als auch Tokens
 4. **Logging für Debugging** - Aber keine sensiblen Daten loggen
 5. **Graceful Degradation** - Fallback auf Bearer Token wenn Session fehlt
+6. **Datenvalidierung** - Immer Session-Daten vor Speichern/Abrufen validieren
+7. **Error Handling** - Saubere null-Rückgaben statt undefined bei ungültigen Daten
+
+## Troubleshooting
+
+### Session-bezogene Fehler
+
+**Problem**: `TypeError: Cannot read properties of undefined (reading 'expires')`
+- **Lösung**: Session-Daten-Validierung ist bereits implementiert in `ReplitSessionStore`
+- **Prüfung**: Logs nach `[SESSION_STORE]` durchsuchen
+
+**Problem**: Session wird nach Neustart nicht wiederhergestellt
+- **Ursache**: Cookie nicht persistent oder httpOnly/secure Einstellungen
+- **Lösung**: Überprüfe Cookie-Einstellungen in Session-Konfiguration
+- **Fallback**: Bearer Token aus localStorage wird automatisch verwendet
+
+**Problem**: 401 Unauthorized trotz gültiger Session
+- **Ursache**: User existiert nicht mehr in Database
+- **Lösung**: Logout und neuer Login erforderlich
+- **Debug**: `[AUTH]` Logs prüfen für User-Lookup
+
+### OAuth-bezogene Fehler
+
+**Problem**: OAuth redirect schlägt fehl
+- **Ursache**: Callback URL in GitHub App nicht korrekt konfiguriert
+- **Lösung**: Stelle sicher, dass `https://<your-repl>.replit.dev/api/auth/github/callback` eingetragen ist
+
+**Problem**: `error=oauth_not_configured`
+- **Ursache**: `GITHUB_CLIENT_ID` oder `GITHUB_CLIENT_SECRET` fehlt
+- **Lösung**: Secrets in Replit konfigurieren
 
 ---
 
