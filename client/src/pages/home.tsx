@@ -21,10 +21,12 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isPollingActive, setIsPollingActive] = useState(false); // State to control polling
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref for the polling interval
 
   const { toast } = useToast();
 
@@ -164,6 +166,52 @@ export default function Home() {
     };
   }, [isRecording]);
 
+  // Polling effect
+  useEffect(() => {
+    // Start polling if the user has just finished recording or if there are pending items
+    if (isRecording || recordings.some(r => r.status === 'pending' || r.status === 'transcribing')) {
+      if (!pollIntervalRef.current) {
+        console.log('[POLLING] Starting polling...');
+        pollIntervalRef.current = setInterval(async () => {
+          console.log('[POLLING] Checking status...');
+          await fetchRecordingsAndCheckStatus();
+        }, 5000); // Poll every 5 seconds
+      }
+    } else {
+      // Stop polling if no recording is active and no pending/transcribing items
+      if (pollIntervalRef.current) {
+        console.log('[POLLING] Stopping polling...');
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [isRecording, recordings]);
+
+  const fetchRecordingsAndCheckStatus = async () => {
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+      const pendingItemsExist = recordings.some(r => r.status === 'pending' || r.status === 'transcribing');
+
+      if (!pendingItemsExist && !isRecording) {
+        console.log('[POLLING] No pending or transcribing items and not recording. Stopping poll.');
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+      }
+    } catch (error) {
+      console.error('[POLLING] Error fetching recordings:', error);
+      // Optionally stop polling on persistent errors
+    }
+  };
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -188,22 +236,13 @@ export default function Home() {
       };
 
       mediaRecorder.onstop = async () => {
-        console.log('[CLIENT] ========================================');
-        console.log('[CLIENT] MediaRecorder onstop event fired');
-        console.log('[CLIENT] Audio chunks collected:', audioChunksRef.current.length);
-        console.log('[CLIENT] Recording time:', recordingTime);
-        console.log('[CLIENT] ========================================');
-        
+        console.log('[RECORDING] Stopped. Processing audio...');
+
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        console.log('[CLIENT] Audio Blob created:', {
-          size: audioBlob.size,
-          type: audioBlob.type
-        });
+        console.log('[RECORDING] Audio blob created:', { size: audioBlob.size, type: audioBlob.type });
 
         // Save to IndexedDB for offline support
-        console.log('[CLIENT] Calling saveRecordingLocally...');
         await saveRecordingLocally(audioBlob, recordingTime);
-        console.log('[CLIENT] saveRecordingLocally completed');
 
         // Clean up
         stream.getTracks().forEach(track => track.stop());
@@ -213,10 +252,8 @@ export default function Home() {
           title: 'Aufnahme gespeichert',
           description: 'Die Aufnahme wird verarbeitet...',
         });
-        
-        console.log('[CLIENT] ========================================');
-        console.log('[CLIENT] onstop cleanup completed');
-        console.log('[CLIENT] ========================================');
+
+        console.log('[RECORDING] Processing complete.');
       };
 
       mediaRecorder.start(100); // Collect data every 100ms for real-time visualization
@@ -238,17 +275,10 @@ export default function Home() {
   };
 
   const stopRecording = () => {
-    console.log('[CLIENT] ========================================');
-    console.log('[CLIENT] stopRecording() called');
-    console.log('[CLIENT] isRecording:', isRecording);
-    console.log('[CLIENT] mediaRecorder exists:', !!mediaRecorderRef.current);
-    console.log('[CLIENT] ========================================');
-    
+    console.log('[RECORDING] Stopping...');
     if (mediaRecorderRef.current && isRecording) {
-      console.log('[CLIENT] Stopping MediaRecorder...');
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      console.log('[CLIENT] MediaRecorder stopped, onstop event should fire');
     }
   };
 
@@ -261,51 +291,34 @@ export default function Home() {
   };
 
   const saveRecordingLocally = async (audioBlob: Blob, duration: number) => {
-    console.log('[CLIENT] ========================================');
-    console.log('[CLIENT] saveRecordingLocally() called');
-    console.log('[CLIENT] Blob size:', audioBlob.size);
-    console.log('[CLIENT] Duration:', duration);
-    console.log('[CLIENT] ========================================');
-    
+    console.log('[LOCAL_SAVE] Saving to IndexedDB...');
     const recordingId = crypto.randomUUID();
-    console.log('[CLIENT] Generated recording ID:', recordingId);
 
     try {
-      // Always save to IndexedDB first
-      console.log('[CLIENT] Saving to IndexedDB...');
-      await indexedDB.addRecording({
-        id: recordingId,
+      // Save locally first (will add serverRecordingId after upload)
+      const localId = await indexedDB.saveRecording({
+        id: recordingId, // Use the generated ID as local ID
         audioBlob,
         duration,
         timestamp: Date.now(),
         status: 'queued',
       });
 
-      console.log('[CLIENT] ✅ Recording saved to IndexedDB:', recordingId);
+      console.log('[UPLOAD] Saved to IndexedDB:', localId);
 
       // If online, try to upload immediately
-      console.log('[CLIENT] Checking network status...');
-      console.log('[CLIENT] navigator.onLine:', navigator.onLine);
-      
       if (navigator.onLine) {
-        console.log('[CLIENT] ========================================');
-        console.log('[CLIENT] Network is online - starting upload');
-        console.log('[CLIENT] ========================================');
-        await uploadRecording(recordingId, audioBlob, duration);
+        console.log('[UPLOAD] Network is online - starting upload');
+        await uploadRecording(localId, audioBlob, duration);
       } else {
-        console.log('[CLIENT] Network is offline - skipping upload');
+        console.log('[UPLOAD] Network is offline - skipping upload');
         toast({
           title: 'Aufnahme gespeichert',
           description: 'Wird hochgeladen, sobald Verbindung besteht.',
         });
       }
     } catch (error) {
-      console.error('[CLIENT] ========================================');
-      console.error('[CLIENT] ❌ Error saving recording');
-      console.error('[CLIENT] Error:', error);
-      console.error('[CLIENT] Stack:', error instanceof Error ? error.stack : 'No stack');
-      console.error('[CLIENT] ========================================');
-
+      console.error('[LOCAL_SAVE] Error saving recording:', error);
       toast({
         title: 'Speicherfehler',
         description: error instanceof Error ? error.message : 'Unbekannter Fehler',
@@ -315,81 +328,56 @@ export default function Home() {
   };
 
   const uploadRecording = async (localId: string, audioBlob: Blob, duration: number) => {
-    console.log('[CLIENT] ========================================');
-    console.log('[CLIENT] uploadRecording() called');
-    console.log('[CLIENT] Local ID:', localId);
-    console.log('[CLIENT] Timestamp:', new Date().toISOString());
-    console.log('[CLIENT] ========================================');
-    
+    console.log('[UPLOAD] Starting upload for local ID:', localId);
+
     try {
       // Mark as uploading
-      console.log('[CLIENT] Updating IndexedDB status to uploading...');
       await indexedDB.updateRecording(localId, { status: 'uploading' });
-      console.log('[CLIENT] ✅ IndexedDB status updated');
+      console.log('[UPLOAD] IndexedDB status updated to uploading.');
 
-      console.log('[CLIENT] Recording upload details:', {
-        localId,
-        blobSize: audioBlob.size,
-        blobType: audioBlob.type,
-        duration
-      });
-
-      console.log('[CLIENT] Creating FormData...');
       const formData = new FormData();
       formData.append('audio', audioBlob);
       formData.append('duration', duration.toString());
-      console.log('[CLIENT] ✅ FormData created');
 
-      console.log('[CLIENT] ========================================');
-      console.log('[CLIENT] 🚀 SENDING FETCH REQUEST TO /api/recordings');
-      console.log('[CLIENT] Method: POST');
-      console.log('[CLIENT] Credentials: include');
-      console.log('[CLIENT] Body: FormData with audio and duration');
-      console.log('[CLIENT] ========================================');
-      
+      console.log('[UPLOAD] Sending POST request to /api/recordings');
       const response = await fetch('/api/recordings', {
         method: 'POST',
         credentials: 'include',
         body: formData,
       });
-      
-      console.log('[CLIENT] ========================================');
-      console.log('[CLIENT] 📥 FETCH RESPONSE RECEIVED');
-      console.log('[CLIENT] Status:', response.status);
-      console.log('[CLIENT] Status Text:', response.statusText);
-      console.log('[CLIENT] OK:', response.ok);
-      console.log('[CLIENT] ========================================');
+
+      console.log('[UPLOAD] Response received:', response.status, response.statusText);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
-        console.error('[CLIENT] Upload failed:', errorData);
+        console.error('[UPLOAD] Failed:', errorData);
 
-        // Mark as failed in IndexedDB
         await indexedDB.updateRecording(localId, { status: 'failed' });
-
         throw new Error(errorData.error || 'Failed to upload recording');
       }
 
       const recording = await response.json();
-      console.log('[CLIENT] Recording uploaded:', recording.id);
+      console.log('[UPLOAD] Success, server ID:', recording.id);
+
+      // Update local status and store server recording ID for later cleanup
+      await indexedDB.updateRecording(localId, { 
+        status: 'uploaded',
+        serverRecordingId: recording.id 
+      });
 
       toast({
         title: 'Aufnahme hochgeladen',
         description: 'Die Transkription läuft im Hintergrund...',
       });
 
-      // Refetch recordings list
-      queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+      // Refetch recordings list to show the newly uploaded recording
+      await queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
 
-      // Start polling for transcription status
-      pollTranscriptionStatus(recording.id, localId);
-
+      // Ensure polling is active when a new recording is uploaded
+      setIsPollingActive(true);
     } catch (error) {
-      console.error('[CLIENT] Error uploading recording:', error);
-
-      // Mark as failed but keep in IndexedDB for retry
+      console.error('[UPLOAD] Error uploading recording:', error);
       await indexedDB.updateRecording(localId, { status: 'failed' });
-
       toast({
         title: 'Upload fehlgeschlagen',
         description: 'Aufnahme bleibt lokal gespeichert.',
@@ -400,23 +388,32 @@ export default function Home() {
 
   const pollTranscriptionStatus = (recordingId: string, localId: string) => {
     let pollCount = 0;
-    const maxPolls = 16; // 4 minutes / 15 seconds
+    const maxPolls = 16; // ~4 minutes at 15-second intervals
 
     const pollInterval = setInterval(async () => {
       pollCount++;
 
       try {
-        const updatedRecordings = await fetch('/api/recordings', {
-          credentials: 'include',
-        }).then(r => r.json());
-
+        const updatedRecordings = await fetch('/api/recordings', { credentials: 'include' }).then(r => r.json());
         const updated = updatedRecordings.find((r: Recording) => r.id === recordingId);
 
-        if (updated?.status === 'transcribed') {
+        if (!updated) {
+          console.warn(`[POLL] Recording ${recordingId} not found in fetched list.`);
+          if (pollCount >= maxPolls) {
+            console.log('[POLL] Max poll count reached without finding recording. Stopping poll.');
+            clearInterval(pollInterval);
+            setIsPollingActive(false); // Stop polling if the recording disappears unexpectedly
+          }
+          return;
+        }
+
+        if (updated.status === 'transcribed') {
+          console.log(`[POLL] Recording ${recordingId} transcribed successfully.`);
           clearInterval(pollInterval);
 
           // Delete from IndexedDB after successful transcription
           await indexedDB.deleteRecording(localId);
+          console.log(`[POLL] Deleted local recording ${localId} from IndexedDB.`);
 
           toast({
             title: 'Erfolgreich transkribiert',
@@ -424,41 +421,72 @@ export default function Home() {
           });
 
           queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
-        } else if (updated?.status === 'failed' || pollCount >= maxPolls) {
+          
+          // Check if polling should continue for other items
+          const remainingPending = recordings.some(r => r.status === 'pending' || r.status === 'transcribing');
+          if (!remainingPending) {
+              setIsPollingActive(false);
+          }
+
+        } else if (updated.status === 'failed' || pollCount >= maxPolls) {
+          console.log(`[POLL] Recording ${recordingId} failed or max polls reached.`);
           clearInterval(pollInterval);
 
-          if (updated?.status === 'failed') {
+          if (updated.status === 'failed') {
             toast({
               title: 'Transkription fehlgeschlagen',
               description: 'Bitte prüfen Sie Ihren Mistral API-Schlüssel in den Einstellungen.',
               variant: 'destructive',
             });
+          } else {
+            toast({
+              title: 'Polling beendet',
+              description: 'Maximale Anzahl von Abfragen erreicht.',
+              variant: 'warning',
+            });
           }
 
           queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+          setIsPollingActive(false); // Stop polling on failure or max polls
         }
       } catch (error) {
-        console.error('[CLIENT] Error polling transcription status:', error);
+        console.error('[POLL] Error polling transcription status:', error);
+        // Consider stopping polling after a certain number of consecutive errors
+        if (pollCount >= maxPolls) {
+          console.log('[POLL] Max poll count reached during error. Stopping poll.');
+          clearInterval(pollInterval);
+          setIsPollingActive(false);
+        }
       }
-    }, 15000);
+    }, 15000); // Poll every 15 seconds
   };
 
   const syncPendingRecordings = async () => {
+    console.log('[SYNC] Starting synchronization of pending recordings...');
     try {
       const pendingRecordings = await indexedDB.getAllRecordings();
 
       if (pendingRecordings.length === 0) {
-        console.log('[SYNC] No pending recordings to sync');
+        console.log('[SYNC] No pending recordings found.');
         return;
       }
 
-      console.log('[SYNC] Found', pendingRecordings.length, 'pending recordings');
+      console.log('[SYNC] Found', pendingRecordings.length, 'pending recordings.');
 
+      let uploadTriggered = false;
       for (const pending of pendingRecordings) {
         if (pending.status === 'queued' || pending.status === 'failed') {
           console.log('[SYNC] Uploading pending recording:', pending.id);
           await uploadRecording(pending.id, pending.audioBlob, pending.duration);
+          uploadTriggered = true;
         }
+      }
+      
+      if (uploadTriggered) {
+        console.log('[SYNC] Uploads initiated, invalidating recordings query.');
+        await queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+        // If uploads were initiated, activate polling
+        setIsPollingActive(true);
       }
     } catch (error) {
       console.error('[SYNC] Error syncing pending recordings:', error);

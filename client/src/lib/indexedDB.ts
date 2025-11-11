@@ -1,5 +1,14 @@
 import { PendingRecording } from '@shared/schema';
 
+export interface LocalRecording {
+  id: string;
+  audioBlob: Blob;
+  duration: number;
+  status: 'queued' | 'uploading' | 'uploaded' | 'failed';
+  createdAt: Date;
+  serverRecordingId?: string;
+}
+
 const DB_NAME = 'audio-notes-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'pending-recordings';
@@ -28,7 +37,7 @@ class IndexedDBManager {
 
   async addRecording(recording: PendingRecording): Promise<void> {
     if (!this.db) await this.init();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);

@@ -318,6 +318,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Recordings routes
   app.get('/api/recordings', requireAuth, async (req, res) => {
     const recordings = await storage.getRecordingsByUserId(req.session.userId!);
+    
+    // Only log if there are processing recordings
+    const processingCount = recordings.filter(r => r.status === 'pending' || r.status === 'transcribing').length;
+    if (processingCount > 0) {
+      console.log(`[API] GET /api/recordings - ${recordings.length} total, ${processingCount} processing`);
+    }
+    
     res.json(recordings);
   });
 
