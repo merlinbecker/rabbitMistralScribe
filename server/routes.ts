@@ -353,8 +353,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Automatically trigger transcription in background
       // Don't await - let it process asynchronously
+      console.log('[UPLOAD] Starting background transcription for:', recording.id, 'userId:', req.session.userId);
       transcribeRecording(recording.id, req.session.userId!).catch((err) => {
-        console.error('[UPLOAD] Background transcription failed:', err);
+        console.error('[UPLOAD] Background transcription failed for recording:', recording.id);
+        console.error('[UPLOAD] Error details:', err);
+        if (err instanceof Error) {
+          console.error('[UPLOAD] Error message:', err.message);
+          console.error('[UPLOAD] Error stack:', err.stack);
+        }
       });
 
       res.json(recording);
@@ -367,15 +373,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Background transcription function
   async function transcribeRecording(recordingId: string, userId: string) {
     try {
-      console.log('[TRANSCRIBE] Starting transcription for recording:', recordingId);
+      console.log('[TRANSCRIBE] Starting transcription for recording:', recordingId, 'userId:', userId);
 
       const recording = await storage.getRecording(recordingId);
       if (!recording) {
         console.error('[TRANSCRIBE] Recording not found:', recordingId);
+        await storage.updateRecording(recordingId, { status: 'failed' });
         return;
       }
+      console.log('[TRANSCRIBE] Recording loaded successfully:', { id: recording.id, status: recording.status, hasAudio: !!recording.audioUrl });
 
       const settings = await storage.getUserSettings(userId);
+      console.log('[TRANSCRIBE] Settings loaded:', { 
+        userId, 
+        settingsFound: !!settings, 
+        hasMistralKey: !!settings?.mistralApiKey,
+        mistralKeyLength: settings?.mistralApiKey?.length || 0
+      });
+      
       if (!settings?.mistralApiKey) {
         console.error('[TRANSCRIBE] No Mistral API key configured for user:', userId);
         await storage.updateRecording(recordingId, { status: 'failed' });
@@ -541,11 +556,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('[TRANSCRIBE] Transcription process completed successfully for:', recordingId);
     } catch (error) {
-      console.error('[TRANSCRIBE] Transcription error:', error);
+      console.error('[TRANSCRIBE] Transcription error for recording:', recordingId);
+      console.error('[TRANSCRIBE] Error details:', error);
       if (error instanceof Error) {
+        console.error('[TRANSCRIBE] Error message:', error.message);
         console.error('[TRANSCRIBE] Error stack:', error.stack);
       }
-      await storage.updateRecording(recordingId, { status: 'failed' });
+      try {
+        await storage.updateRecording(recordingId, { status: 'failed' });
+        console.log('[TRANSCRIBE] Recording status set to failed:', recordingId);
+      } catch (updateError) {
+        console.error('[TRANSCRIBE] Failed to update recording status:', updateError);
+      }
     }
   }
 
