@@ -48,7 +48,7 @@ export default function Home() {
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         r.transcript?.toLowerCase().includes(query) ||
         r.summary?.toLowerCase().includes(query)
       );
@@ -62,42 +62,37 @@ export default function Home() {
     r => r.status === 'pending' || r.status === 'transcribing'
   ).length;
 
-  // Monitor network status and sync pending recordings
+  // Check for pending uploads on mount (login/reload)
   useEffect(() => {
-    const handleOnline = async () => {
-      // console.log('[NETWORK] Connection restored');
-      setIsOnline(true);
+    const checkPendingUploads = async () => {
+      if (!navigator.onLine) {
+        console.log('[SYNC] Offline - skipping initial pending upload check');
+        return;
+      }
 
-      toast({
-        title: 'Verbindung wiederhergestellt',
-        description: 'Ausstehende Aufnahmen werden hochgeladen...',
-      });
-
+      console.log('[SYNC] Checking for pending uploads on mount...');
       await syncPendingRecordings();
     };
 
-    const handleOffline = () => {
-      // console.log('[NETWORK] Connection lost');
-      setIsOnline(false);
+    // Run check after a short delay to ensure auth is established
+    const timeoutId = setTimeout(checkPendingUploads, 1000);
 
-      toast({
-        title: 'Verbindung verloren',
-        description: 'Aufnahmen werden lokal gespeichert.',
-        variant: 'destructive',
-      });
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  // Monitor network status and sync pending recordings
+  useEffect(() => {
+    const handleOnline = async () => {
+      console.log('[SYNC] Network came online - syncing pending recordings');
+      await syncPendingRecordings();
     };
 
     window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Sync on initial load
-    if (navigator.onLine) {
-      syncPendingRecordings();
-    }
+    window.addEventListener('sync-recordings', handleOnline);
 
     return () => {
       window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('sync-recordings', handleOnline);
     };
   }, []);
 
@@ -176,12 +171,12 @@ export default function Home() {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-        } 
+        }
       });
 
       setAudioStream(stream);
@@ -323,9 +318,9 @@ export default function Home() {
       // console.log('[UPLOAD] Success, server ID:', recording.id);
 
       // Update local status and store server recording ID for later cleanup
-      await indexedDB.updateRecording(localId, { 
+      await indexedDB.updateRecording(localId, {
         status: 'uploaded',
-        serverRecordingId: recording.id 
+        serverRecordingId: recording.id
       });
 
       toast({
@@ -457,7 +452,7 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">
+    <div className="h-screen flex flex-col max-w-[240px] mx-auto">
       <StatusBar isRecording={isRecording} recordingTime={recordingTime} />
 
       <div className="flex-1 overflow-y-auto">
@@ -465,8 +460,8 @@ export default function Home() {
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-status font-bold">Audio Notes</h1>
             <Link href="/settings">
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="icon"
                 data-testid="button-settings"
               >
@@ -520,8 +515,8 @@ export default function Home() {
         <RecordingsList recordings={filteredRecordings} isLoading={isLoading} />
       </div>
 
-      <RecordingControl 
-        isRecording={isRecording} 
+      <RecordingControl
+        isRecording={isRecording}
         onToggleRecording={toggleRecording}
       />
     </div>

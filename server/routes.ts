@@ -235,6 +235,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     console.log('[AUTH] User found:', { id: user.id, username: user.username });
 
+    // Trigger worker to process any pending jobs for this user
+    TranscriptionWorker.notifyNewJob().catch(err => 
+      console.error('[AUTH] Failed to notify worker on login:', err)
+    );
+
     // Don't send access token to frontend
     const { accessToken, ...safeUser } = user;
     res.json(safeUser);
