@@ -322,15 +322,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
+    console.log('[ROUTES] ========================================');
+    console.log('[ROUTES] POST /api/recordings called');
+    console.log('[ROUTES] Timestamp:', new Date().toISOString());
+    console.log('[ROUTES] User ID:', req.session.userId);
+    console.log('[ROUTES] ========================================');
+
     try {
       console.log('[UPLOAD] Recording upload started');
 
       if (!req.file) {
-        console.error('[UPLOAD] No audio file provided in request');
+        console.error('[UPLOAD] ❌ No audio file provided in request');
         return res.status(400).json({ error: 'No audio file provided' });
       }
 
-      console.log('[UPLOAD] File received:', {
+      console.log('[UPLOAD] ✅ File received:', {
         mimetype: req.file.mimetype,
         size: req.file.buffer.length,
         duration: req.body.duration
@@ -339,12 +345,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const duration = parseInt(req.body.duration || '0');
 
       // Store audio file as base64
+      console.log('[UPLOAD] 🔄 Encoding audio to base64...');
       const audioBase64 = req.file.buffer.toString('base64');
       const audioUrl = `data:${req.file.mimetype};base64,${audioBase64}`;
-
-      console.log('[UPLOAD] Audio encoded to base64, length:', audioBase64.length);
+      console.log('[UPLOAD] ✅ Audio encoded to base64, length:', audioBase64.length);
 
       // Create recording entry
+      console.log('[UPLOAD] 🔄 Creating recording entry in database...');
       const recording = await storage.createRecording({
         userId: req.session.userId!,
         audioUrl,
@@ -354,28 +361,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         summary: null,
         githubFileUrl: null,
       });
-
-      console.log('[UPLOAD] Recording created in DB:', recording.id);
+      console.log('[UPLOAD] ✅ Recording created in DB:', {
+        id: recording.id,
+        userId: recording.userId,
+        status: recording.status,
+        duration: recording.duration
+      });
 
       // Enqueue transcription job
-      console.log('[ROUTES] 📤 Enqueueing transcription job for recording:', recording.id);
-      const job = await JobQueue.enqueue(recording.id, req.session.userId);
-      console.log('[ROUTES] ✅ Transcription job enqueued successfully:', {
+      console.log('[ROUTES] ========================================');
+      console.log('[ROUTES] 📤 ENQUEUEING TRANSCRIPTION JOB');
+      console.log('[ROUTES] Recording ID:', recording.id);
+      console.log('[ROUTES] User ID:', req.session.userId);
+      console.log('[ROUTES] ========================================');
+      
+      const job = await JobQueue.enqueue(recording.id, req.session.userId!);
+      
+      console.log('[ROUTES] ========================================');
+      console.log('[ROUTES] ✅ JOB ENQUEUED SUCCESSFULLY');
+      console.log('[ROUTES] Job details:', {
         jobId: job.id,
         recordingId: recording.id,
         userId: req.session.userId,
+        status: job.status,
+        attempts: job.attempts,
         timestamp: new Date().toISOString()
       });
+      console.log('[ROUTES] ========================================');
 
       // Notify worker of new job
-      console.log('[ROUTES] 🔔 Notifying worker of new job...');
+      console.log('[ROUTES] ========================================');
+      console.log('[ROUTES] 🔔 NOTIFYING WORKER OF NEW JOB');
+      console.log('[ROUTES] About to call TranscriptionWorker.notifyNewJob()');
+      console.log('[ROUTES] ========================================');
+      
       await TranscriptionWorker.notifyNewJob();
-      console.log('[ROUTES] ✅ Worker notification sent');
+      
+      console.log('[ROUTES] ========================================');
+      console.log('[ROUTES] ✅ WORKER NOTIFICATION COMPLETED');
+      console.log('[ROUTES] notifyNewJob() returned successfully');
+      console.log('[ROUTES] ========================================');
 
       // Send response immediately
+      console.log('[ROUTES] 📤 Sending response to client with recording:', recording.id);
       res.json(recording);
+      
+      console.log('[ROUTES] ========================================');
+      console.log('[ROUTES] POST /api/recordings completed successfully');
+      console.log('[ROUTES] ========================================');
     } catch (error) {
-      console.error('[UPLOAD] Failed to create recording:', error);
+      console.error('[UPLOAD] ========================================');
+      console.error('[UPLOAD] ❌ UPLOAD FAILED');
+      console.error('[UPLOAD] Error:', error);
+      console.error('[UPLOAD] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
+      console.error('[UPLOAD] ========================================');
       res.status(500).json({ error: 'Failed to create recording' });
     }
   });

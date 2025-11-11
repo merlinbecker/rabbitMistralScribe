@@ -1,4 +1,3 @@
-
 import Database from "@replit/database";
 
 const db = new Database();
@@ -20,6 +19,12 @@ export class JobQueue {
 
   // Add job to queue
   static async enqueue(recordingId: string, userId: string): Promise<string> {
+    console.log('[JOBQUEUE] ========================================');
+    console.log('[JOBQUEUE] enqueue() called');
+    console.log('[JOBQUEUE] Recording ID:', recordingId);
+    console.log('[JOBQUEUE] User ID:', userId);
+    console.log('[JOBQUEUE] ========================================');
+
     const jobId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const job: TranscriptionJob = {
       id: jobId,
@@ -30,27 +35,32 @@ export class JobQueue {
       createdAt: new Date().toISOString(),
     };
 
-    const key = `${this.QUEUE_PREFIX}${jobId}`;
-    await db.set(key, JSON.stringify(job));
-    
-    console.log('[QUEUE] Job enqueued:', jobId, 'for recording:', recordingId);
+    console.log('[JOBQUEUE] 🔄 Saving job to database...');
+    console.log('[JOBQUEUE] Job details:', job);
+
+    await db.set(`job:transcription:${jobId}`, JSON.stringify(job));
+
+    console.log('[JOBQUEUE] ✅ Job saved to database');
+    console.log('[JOBQUEUE] Database key:', `job:transcription:${jobId}`);
+    console.log('[JOBQUEUE] ========================================');
+
     return jobId;
   }
 
   // Get next pending job
   static async dequeue(): Promise<TranscriptionJob | null> {
     const keys = await db.list(this.QUEUE_PREFIX);
-    
+
     for (const key of keys) {
       const rawData = await db.get(key);
-      
+
       if (!rawData) continue;
-      
+
       const job = JSON.parse(rawData as string) as TranscriptionJob;
-      
+
       // Skip jobs that are already processing or completed
       if (job.status !== 'pending') continue;
-      
+
       // Skip jobs that exceeded max attempts
       if (job.attempts >= this.MAX_ATTEMPTS) {
         await this.markFailed(job.id, 'Max attempts exceeded');
@@ -61,7 +71,7 @@ export class JobQueue {
       job.status = 'processing';
       job.attempts++;
       await db.set(key, JSON.stringify(job));
-      
+
       console.log('[QUEUE] Job dequeued:', job.id, 'attempt:', job.attempts);
       return job;
     }
@@ -73,16 +83,16 @@ export class JobQueue {
   static async markCompleted(jobId: string): Promise<void> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
     const rawData = await db.get(key);
-    
+
     if (!rawData) return;
-    
+
     const job = JSON.parse(rawData as string) as TranscriptionJob;
     job.status = 'completed';
     job.processedAt = new Date().toISOString();
-    
+
     await db.set(key, JSON.stringify(job));
     console.log('[QUEUE] Job completed:', jobId);
-    
+
     // Cleanup after 1 hour
     setTimeout(() => this.cleanup(jobId), 60 * 60 * 1000);
   }
@@ -91,14 +101,14 @@ export class JobQueue {
   static async markFailed(jobId: string, error: string): Promise<void> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
     const rawData = await db.get(key);
-    
+
     if (!rawData) return;
-    
+
     const job = JSON.parse(rawData as string) as TranscriptionJob;
     job.status = 'failed';
     job.error = error;
     job.processedAt = new Date().toISOString();
-    
+
     await db.set(key, JSON.stringify(job));
     console.error('[QUEUE] Job failed:', jobId, error);
   }
@@ -107,12 +117,12 @@ export class JobQueue {
   static async requeue(jobId: string): Promise<void> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
     const rawData = await db.get(key);
-    
+
     if (!rawData) return;
-    
+
     const job = JSON.parse(rawData as string) as TranscriptionJob;
     job.status = 'pending';
-    
+
     await db.set(key, JSON.stringify(job));
     console.log('[QUEUE] Job requeued:', jobId);
   }
@@ -128,9 +138,9 @@ export class JobQueue {
   static async getJob(jobId: string): Promise<TranscriptionJob | null> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
     const rawData = await db.get(key);
-    
+
     if (!rawData) return null;
-    
+
     return JSON.parse(rawData as string) as TranscriptionJob;
   }
 
@@ -138,15 +148,15 @@ export class JobQueue {
   static async getPendingCount(): Promise<number> {
     const keys = await db.list(this.QUEUE_PREFIX);
     let count = 0;
-    
+
     for (const key of keys) {
       const rawData = await db.get(key);
       if (!rawData) continue;
-      
+
       const job = JSON.parse(rawData as string) as TranscriptionJob;
       if (job.status === 'pending') count++;
     }
-    
+
     return count;
   }
 }
