@@ -75,14 +75,20 @@ export class MemStorage implements IStorage {
 
   // User settings methods
   async getUserSettings(userId: string): Promise<UserSettings | undefined> {
-    // First try direct lookup by userId
-    const settings = this.userSettings.get(userId);
-    if (settings) return settings;
-    
-    // Fallback to searching through all settings
-    return Array.from(this.userSettings.values()).find(
+    // Search through all settings to find by userId
+    const settings = Array.from(this.userSettings.values()).find(
       (settings) => settings.userId === userId,
     );
+    
+    console.log('[STORAGE] getUserSettings called for userId:', userId);
+    console.log('[STORAGE] Found settings:', settings ? {
+      id: settings.id,
+      userId: settings.userId,
+      hasMistralKey: !!settings.mistralApiKey,
+      mistralKeyLength: settings.mistralApiKey?.length || 0
+    } : 'NOT FOUND');
+    
+    return settings;
   }
 
   async createUserSettings(insertSettings: InsertUserSettings): Promise<UserSettings> {
@@ -96,8 +102,15 @@ export class MemStorage implements IStorage {
       summaryTemplate: insertSettings.summaryTemplate ?? null,
       updatedAt: new Date(),
     };
-    // Use userId as key for consistent lookup
-    this.userSettings.set(insertSettings.userId, settings);
+    // Use settings.id as key for consistent lookup
+    this.userSettings.set(settings.id, settings);
+    
+    console.log('[STORAGE] Created settings:', {
+      id: settings.id,
+      userId: settings.userId,
+      hasMistralKey: !!settings.mistralApiKey
+    });
+    
     return settings;
   }
 
@@ -109,6 +122,7 @@ export class MemStorage implements IStorage {
     }
 
     console.log('[STORAGE] Current settings before update:', {
+      id: settings.id,
       userId: settings.userId,
       hasMistralKey: !!settings.mistralApiKey,
       mistralKeyLength: settings.mistralApiKey?.length || 0
@@ -121,13 +135,14 @@ export class MemStorage implements IStorage {
     };
     
     console.log('[STORAGE] Updated settings:', {
+      id: updatedSettings.id,
       userId: updatedSettings.userId,
       hasMistralKey: !!updatedSettings.mistralApiKey,
       mistralKeyLength: updatedSettings.mistralApiKey?.length || 0
     });
     
-    // Store using userId as the key for consistent lookup
-    this.userSettings.set(userId, updatedSettings);
+    // Store using settings.id as the key for consistent lookup
+    this.userSettings.set(updatedSettings.id, updatedSettings);
     return updatedSettings;
   }
 
