@@ -1,0 +1,39 @@
+[UPLOAD] Recording upload started
+[UPLOAD] File received: { mimetype: 'audio/webm', size: 42033, duration: '0' }
+[UPLOAD] Audio encoded to base64, length: 56044
+[REPLIT_STORAGE] Error creating recording: TypeError: recordingIds.push is not a function
+    at ReplitStorage.createRecording (/home/runner/workspace/server/replitStorage.ts:257:20)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:342:25)
+[UPLOAD] Failed to create recording: TypeError: recordingIds.push is not a function
+    at ReplitStorage.createRecording (/home/runner/workspace/server/replitStorage.ts:257:20)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:342:25)
+[SESSION_STORE] Setting session: JKMHGmOV8dB3HJnsat4Q5wraZ6gfDDYh userId: 08d0e1d0-280e-4a4c-bc25-9091a5d873dc
+[SESSION_STORE] Input session structure: {
+  hasCookie: true,
+  cookieType: 'object',
+  cookieKeys: [ 'path', '_expires', 'originalMaxAge', 'httpOnly', 'secure' ],
+  cookieExpires: 2025-12-11T15:31:07.672Z,
+  fullSession: '{"cookie":{"originalMaxAge":2591999997,"expires":"2025-12-11T15:31:07.672Z","secure":false,"httpOnly":true,"path":"/"},"userId":"08d0e1d0-280e-4a4c-bc25-9091a5d873dc"}'
+}
+[SESSION_STORE] Serialized session to store: {
+  jsonLength: 205,
+  jsonPreview: '{"cookie":{"path":"/","_expires":"2025-12-11T15:31:07.672Z","originalMaxAge":2591999997,"httpOnly":true,"secure":false,"expires":"2025-12-11T15:31:07.672Z"},"userId":"08d0e1d0-280e-4a4c-bc25-9091a5d87',
+  sessionCopyKeys: [ 'cookie', 'userId' ],
+  cookieKeys: [
+    'path',
+    '_expires',
+    'originalMaxAge',
+    'httpOnly',
+    'secure',
+    'expires'
+  ]
+}
+[SESSION_STORE] Session saved successfully to DB: JKMHGmOV8dB3HJnsat4Q5wraZ6gfDDYh
+[SESSION_STORE] Verification read: {
+  type: 'object',
+  matches: false,
+  preview: '{"ok":true,"value":"{\\"cookie\\":{\\"path\\":\\"/\\",\\"_expires\\":\\"2025-12-11T15:31:07.672Z\\",\\"originalMaxAge\\":2591999997,\\"httpOnly\\":true,\\"secure\\":false,\\"expires\\":\\"2025-12-11T15:31:07.672Z\\"},\\"u'
+}
+3:31:07 PM [express] POST /api/recordings 500 in 559ms :: {"error":"Failed to create recording"}
