@@ -49,7 +49,15 @@ export class JobQueue {
 
   // Get next pending job
   static async dequeue(): Promise<TranscriptionJob | null> {
-    const keys = await db.list(this.QUEUE_PREFIX);
+    const keysResponse = await db.list(this.QUEUE_PREFIX);
+    
+    // Unwrap Replit DB response
+    let keys: string[] = [];
+    if (keysResponse && typeof keysResponse === 'object' && 'ok' in keysResponse && 'value' in keysResponse) {
+      keys = keysResponse.value || [];
+    } else if (Array.isArray(keysResponse)) {
+      keys = keysResponse;
+    }
 
     for (const key of keys) {
       const rawData = await db.get(key);
@@ -146,7 +154,16 @@ export class JobQueue {
 
   // Get pending jobs count
   static async getPendingCount(): Promise<number> {
-    const keys = await db.list(this.QUEUE_PREFIX);
+    const keysResponse = await db.list(this.QUEUE_PREFIX);
+    
+    // Unwrap Replit DB response
+    let keys: string[] = [];
+    if (keysResponse && typeof keysResponse === 'object' && 'ok' in keysResponse && 'value' in keysResponse) {
+      keys = keysResponse.value || [];
+    } else if (Array.isArray(keysResponse)) {
+      keys = keysResponse;
+    }
+    
     let count = 0;
 
     for (const key of keys) {
