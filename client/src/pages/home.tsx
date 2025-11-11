@@ -21,11 +21,11 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   const { toast } = useToast();
 
   // Fetch recordings
@@ -63,7 +63,7 @@ export default function Home() {
     mutationFn: async () => {
       const pendingRecordings = recordings.filter(r => r.status === 'pending');
       const results = [];
-      
+
       for (const recording of pendingRecordings) {
         try {
           const result = await apiRequest('POST', `/api/recordings/${recording.id}/transcribe`);
@@ -72,15 +72,15 @@ export default function Home() {
           results.push({ id: recording.id, success: false, error });
         }
       }
-      
+
       return results;
     },
     onSuccess: (results) => {
       const successCount = results.filter(r => r.success).length;
       const failCount = results.filter(r => !r.success).length;
-      
+
       queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
-      
+
       toast({
         title: 'Batch-Verarbeitung abgeschlossen',
         description: `${successCount} erfolgreich, ${failCount} fehlgeschlagen`,
@@ -100,19 +100,19 @@ export default function Home() {
     const handleOnline = async () => {
       console.log('[NETWORK] Connection restored');
       setIsOnline(true);
-      
+
       toast({
         title: 'Verbindung wiederhergestellt',
         description: 'Ausstehende Aufnahmen werden hochgeladen...',
       });
-      
+
       await syncPendingRecordings();
     };
 
     const handleOffline = () => {
       console.log('[NETWORK] Connection lost');
       setIsOnline(false);
-      
+
       toast({
         title: 'Verbindung verloren',
         description: 'Aufnahmen werden lokal gespeichert.',
@@ -173,7 +173,7 @@ export default function Home() {
           autoGainControl: true,
         } 
       });
-      
+
       setAudioStream(stream);
       audioChunksRef.current = [];
 
@@ -189,10 +189,10 @@ export default function Home() {
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        
+
         // Save to IndexedDB for offline support
         await saveRecordingLocally(audioBlob, recordingTime);
-        
+
         // Clean up
         stream.getTracks().forEach(track => track.stop());
         setAudioStream(null);
@@ -238,7 +238,7 @@ export default function Home() {
 
   const saveRecordingLocally = async (audioBlob: Blob, duration: number) => {
     const recordingId = crypto.randomUUID();
-    
+
     try {
       // Always save to IndexedDB first
       await indexedDB.addRecording({
@@ -262,7 +262,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error('[CLIENT] Error saving recording to IndexedDB:', error);
-      
+
       toast({
         title: 'Speicherfehler',
         description: error instanceof Error ? error.message : 'Unbekannter Fehler',
@@ -296,10 +296,10 @@ export default function Home() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
         console.error('[CLIENT] Upload failed:', errorData);
-        
+
         // Mark as failed in IndexedDB
         await indexedDB.updateRecording(localId, { status: 'failed' });
-        
+
         throw new Error(errorData.error || 'Failed to upload recording');
       }
 
@@ -316,13 +316,13 @@ export default function Home() {
 
       // Start polling for transcription status
       pollTranscriptionStatus(recording.id, localId);
-      
+
     } catch (error) {
       console.error('[CLIENT] Error uploading recording:', error);
-      
+
       // Mark as failed but keep in IndexedDB for retry
       await indexedDB.updateRecording(localId, { status: 'failed' });
-      
+
       toast({
         title: 'Upload fehlgeschlagen',
         description: 'Aufnahme bleibt lokal gespeichert.',
@@ -334,32 +334,32 @@ export default function Home() {
   const pollTranscriptionStatus = (recordingId: string, localId: string) => {
     let pollCount = 0;
     const maxPolls = 16; // 4 minutes / 15 seconds
-    
+
     const pollInterval = setInterval(async () => {
       pollCount++;
-      
+
       try {
         const updatedRecordings = await fetch('/api/recordings', {
           credentials: 'include',
         }).then(r => r.json());
 
         const updated = updatedRecordings.find((r: Recording) => r.id === recordingId);
-        
+
         if (updated?.status === 'transcribed') {
           clearInterval(pollInterval);
-          
+
           // Delete from IndexedDB after successful transcription
           await indexedDB.deleteRecording(localId);
-          
+
           toast({
             title: 'Erfolgreich transkribiert',
             description: 'Die Notiz wurde transkribiert und in GitHub gespeichert.',
           });
-          
+
           queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
         } else if (updated?.status === 'failed' || pollCount >= maxPolls) {
           clearInterval(pollInterval);
-          
+
           if (updated?.status === 'failed') {
             toast({
               title: 'Transkription fehlgeschlagen',
@@ -367,7 +367,7 @@ export default function Home() {
               variant: 'destructive',
             });
           }
-          
+
           queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
         }
       } catch (error) {
@@ -379,7 +379,7 @@ export default function Home() {
   const syncPendingRecordings = async () => {
     try {
       const pendingRecordings = await indexedDB.getAllRecordings();
-      
+
       if (pendingRecordings.length === 0) {
         console.log('[SYNC] No pending recordings to sync');
         return;
@@ -401,7 +401,7 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">
       <StatusBar isRecording={isRecording} recordingTime={recordingTime} />
-      
+
       <div className="flex-1 overflow-y-auto">
         <div className="p-3 space-y-4">
           <div className="flex items-center justify-between mb-2">
