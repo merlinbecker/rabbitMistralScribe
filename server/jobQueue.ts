@@ -59,18 +59,36 @@ export class JobQueue {
       keys = keysResponse;
     }
 
+    console.log('[QUEUE] Keys found:', keys);
+
     for (const key of keys) {
+      console.log('[QUEUE] Fetching job data for key:', key);
       const rawData = await db.get(key);
 
-      if (!rawData) continue;
+      console.log('[QUEUE] Raw data received:', typeof rawData, rawData);
+
+      if (!rawData) {
+        console.log('[QUEUE] No data found for key:', key);
+        continue;
+      }
 
       // Unwrap Replit DB response if needed
       let jobData: string;
-      if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
-        jobData = rawData.value as string;
+      if (typeof rawData === 'object' && rawData !== null) {
+        // Check if it's a Replit DB wrapper object
+        if ('ok' in rawData && 'value' in rawData) {
+          console.log('[QUEUE] Unwrapping wrapper object, value type:', typeof rawData.value);
+          jobData = rawData.value as string;
+        } else {
+          // It's an object but not a wrapper - stringify it
+          console.log('[QUEUE] Converting object to string');
+          jobData = JSON.stringify(rawData);
+        }
       } else {
         jobData = rawData as string;
       }
+
+      console.log('[QUEUE] Job data to parse:', jobData.substring(0, 100));
 
       const job = JSON.parse(jobData) as TranscriptionJob;
 
