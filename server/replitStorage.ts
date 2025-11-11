@@ -253,7 +253,18 @@ export class ReplitStorage implements IStorage {
 
       // Add to user's recordings list
       const userRecordingsKey = this.userRecordingsKey(insertRecording.userId);
-      const recordingIds = await this.db.get(userRecordingsKey) || [];
+      const recordingIdsData = await this.db.get(userRecordingsKey);
+      
+      // Check if recordingIdsData is valid and unwrap if needed
+      let recordingIds: string[] = [];
+      if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
+        // Replit DB wrapped response
+        recordingIds = Array.isArray(recordingIdsData.value) ? recordingIdsData.value : [];
+      } else if (Array.isArray(recordingIdsData)) {
+        // Direct array response
+        recordingIds = recordingIdsData;
+      }
+      
       recordingIds.push(id);
       await this.db.set(userRecordingsKey, recordingIds);
 
@@ -294,7 +305,18 @@ export class ReplitStorage implements IStorage {
 
       // Remove from user's recordings list
       const userRecordingsKey = this.userRecordingsKey(recording.userId);
-      const recordingIds = await this.db.get(userRecordingsKey) || [];
+      const recordingIdsData = await this.db.get(userRecordingsKey);
+      
+      // Check if recordingIdsData is valid and unwrap if needed
+      let recordingIds: string[] = [];
+      if (recordingIdsData && typeof recordingIdsData === 'object' && 'ok' in recordingIdsData && recordingIdsData.ok) {
+        // Replit DB wrapped response
+        recordingIds = Array.isArray(recordingIdsData.value) ? recordingIdsData.value : [];
+      } else if (Array.isArray(recordingIdsData)) {
+        // Direct array response
+        recordingIds = recordingIdsData;
+      }
+      
       const updatedIds = recordingIds.filter((rid: string) => rid !== id);
       await this.db.set(userRecordingsKey, updatedIds);
 
