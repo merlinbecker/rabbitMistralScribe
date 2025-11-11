@@ -1,6 +1,6 @@
-
 import { JobQueue } from './jobQueue';
 import { storage } from './storage';
+import Database from "@replit/database";
 
 export class TranscriptionWorker {
   private static isRunning = false;
@@ -46,7 +46,7 @@ export class TranscriptionWorker {
       // Process jobs until queue is empty
       while (this.isRunning) {
         const job = await JobQueue.dequeue();
-        
+
         if (!job) {
           // Queue is empty
           console.log('[WORKER] Queue is empty, waiting for new jobs');
@@ -61,7 +61,7 @@ export class TranscriptionWorker {
           console.log('[WORKER] ✅ Job completed:', job.id);
         } catch (error) {
           console.error('[WORKER] ❌ Job failed:', job.id, error);
-          
+
           if (job.attempts < 3) {
             // Requeue for retry
             await JobQueue.requeue(job.id);
@@ -69,7 +69,7 @@ export class TranscriptionWorker {
           } else {
             // Max attempts reached
             await JobQueue.markFailed(job.id, error instanceof Error ? error.message : 'Unknown error');
-            
+
             // Also mark recording as failed
             await storage.updateRecording(job.recordingId, { status: 'failed' });
           }
