@@ -11,7 +11,10 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'json', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      reportOnFailure: true,
+      all: true,
       exclude: [
         'node_modules/',
         'dist/',
