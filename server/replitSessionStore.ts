@@ -24,6 +24,8 @@ export class ReplitSessionStore extends session.Store {
         type: typeof rawData,
         isString: typeof rawData === 'string',
         isObject: typeof rawData === 'object',
+        hasOkField: typeof rawData === 'object' && rawData && 'ok' in rawData,
+        hasValueField: typeof rawData === 'object' && rawData && 'value' in rawData,
         rawDataPreview: typeof rawData === 'string' ? rawData.substring(0, 100) : JSON.stringify(rawData).substring(0, 100)
       });
       
@@ -34,11 +36,18 @@ export class ReplitSessionStore extends session.Store {
         return;
       }
       
+      // Unwrap Replit DB response if it's wrapped in {ok: true, value: "..."}
+      let dataToProcess = rawData;
+      if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData && rawData.ok) {
+        console.log('[SESSION_STORE] Unwrapping Replit DB response object');
+        dataToProcess = rawData.value;
+      }
+      
       // Parse the session data if it's stored as JSON string
       let sessionData;
-      if (typeof rawData === 'string') {
+      if (typeof dataToProcess === 'string') {
         try {
-          sessionData = JSON.parse(rawData);
+          sessionData = JSON.parse(dataToProcess);
           console.log('[SESSION_STORE] Parsed JSON session data:', {
             hasCookie: !!sessionData.cookie,
             cookieType: typeof sessionData.cookie,
@@ -52,8 +61,8 @@ export class ReplitSessionStore extends session.Store {
           return;
         }
       } else {
-        sessionData = rawData;
-        console.log('[SESSION_STORE] Using raw data as session data:', {
+        sessionData = dataToProcess;
+        console.log('[SESSION_STORE] Using data as session data:', {
           hasCookie: !!sessionData.cookie,
           cookieType: typeof sessionData.cookie,
           userId: sessionData.userId
