@@ -353,14 +353,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Automatically trigger transcription in background
       // Don't await - let it process asynchronously
-      console.log('[UPLOAD] Starting background transcription for:', recording.id, 'userId:', req.session.userId);
-      transcribeRecording(recording.id, req.session.userId!).catch((err) => {
-        console.error('[UPLOAD] Background transcription failed for recording:', recording.id);
-        console.error('[UPLOAD] Error details:', err);
-        if (err instanceof Error) {
-          console.error('[UPLOAD] Error message:', err.message);
-          console.error('[UPLOAD] Error stack:', err.stack);
-        }
+      console.log('[UPLOAD] About to start background transcription...');
+      console.log('[UPLOAD] Recording ID:', recording.id);
+      console.log('[UPLOAD] User ID:', req.session.userId);
+      console.log('[UPLOAD] transcribeRecording function exists:', typeof transcribeRecording === 'function');
+      
+      // Start transcription immediately
+      setImmediate(() => {
+        console.log('[UPLOAD] setImmediate: Starting transcription NOW');
+        transcribeRecording(recording.id, req.session.userId!).catch((err) => {
+          console.error('[UPLOAD] Background transcription failed for recording:', recording.id);
+          console.error('[UPLOAD] Error details:', err);
+          if (err instanceof Error) {
+            console.error('[UPLOAD] Error message:', err.message);
+            console.error('[UPLOAD] Error stack:', err.stack);
+          }
+        });
       });
 
       res.json(recording);
