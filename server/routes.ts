@@ -352,21 +352,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create recording entry
       console.log('[UPLOAD] 🔄 Creating recording entry in database...');
-      const recording = await storage.createRecording({
-        userId: req.session.userId!,
-        audioUrl,
-        duration,
-        status: 'pending',
-        transcript: null,
-        summary: null,
-        githubFileUrl: null,
-      });
-      console.log('[UPLOAD] ✅ Recording created in DB:', {
-        id: recording.id,
-        userId: recording.userId,
-        status: recording.status,
-        duration: recording.duration
-      });
+      let recording;
+      try {
+        recording = await storage.createRecording({
+          userId: req.session.userId!,
+          audioUrl,
+          duration,
+          status: 'pending',
+          transcript: null,
+          summary: null,
+          githubFileUrl: null,
+        });
+        console.log('[UPLOAD] ✅ Recording created in DB:', {
+          id: recording.id,
+          userId: recording.userId,
+          status: recording.status,
+          duration: recording.duration
+        });
+      } catch (error) {
+        console.error('[UPLOAD] ❌ CRITICAL: Failed to create recording in DB');
+        console.error('[UPLOAD] Error:', error);
+        console.error('[UPLOAD] Stack:', error instanceof Error ? error.stack : 'No stack');
+        throw error;
+      }
 
       // Enqueue transcription job
       console.log('[ROUTES] ========================================');
@@ -375,19 +383,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[ROUTES] User ID:', req.session.userId);
       console.log('[ROUTES] ========================================');
       
-      const job = await JobQueue.enqueue(recording.id, req.session.userId!);
-      
-      console.log('[ROUTES] ========================================');
-      console.log('[ROUTES] ✅ JOB ENQUEUED SUCCESSFULLY');
-      console.log('[ROUTES] Job details:', {
-        jobId: job.id,
-        recordingId: recording.id,
-        userId: req.session.userId,
-        status: job.status,
-        attempts: job.attempts,
-        timestamp: new Date().toISOString()
-      });
-      console.log('[ROUTES] ========================================');
+      let job;
+      try {
+        job = await JobQueue.enqueue(recording.id, req.session.userId!);
+        
+        console.log('[ROUTES] ========================================');
+        console.log('[ROUTES] ✅ JOB ENQUEUED SUCCESSFULLY');
+        console.log('[ROUTES] Job details:', {
+          jobId: job,
+          recordingId: recording.id,
+          userId: req.session.userId,
+          timestamp: new Date().toISOString()
+        });
+        console.log('[ROUTES] ========================================');
+      } catch (error) {
+        console.error('[ROUTES] ❌ CRITICAL: Failed to enqueue job');
+        console.error('[ROUTES] Error:', error);
+        console.error('[ROUTES] Stack:', error instanceof Error ? error.stack : 'No stack');
+        throw error;
+      }
 
       // Notify worker of new job
       console.log('[ROUTES] ========================================');
@@ -395,12 +409,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[ROUTES] About to call TranscriptionWorker.notifyNewJob()');
       console.log('[ROUTES] ========================================');
       
-      await TranscriptionWorker.notifyNewJob();
-      
-      console.log('[ROUTES] ========================================');
-      console.log('[ROUTES] ✅ WORKER NOTIFICATION COMPLETED');
-      console.log('[ROUTES] notifyNewJob() returned successfully');
-      console.log('[ROUTES] ========================================');
+      try {
+        await TranscriptionWorker.notifyNewJob();
+        
+        console.log('[ROUTES] ========================================');
+        console.log('[ROUTES] ✅ WORKER NOTIFICATION COMPLETED');
+        console.log('[ROUTES] notifyNewJob() returned successfully');
+        console.log('[ROUTES] ========================================');
+      } catch (error) {
+        console.error('[ROUTES] ❌ CRITICAL: Worker notification failed');
+        console.error('[ROUTES] Error:', error);
+        console.error('[ROUTES] Stack:', error instanceof Error ? error.stack : 'No stack');
+        // Don't throw - recording was saved, just worker notification failed
+      }
 
       // Send response immediately
       console.log('[ROUTES] 📤 Sending response to client with recording:', recording.id);
