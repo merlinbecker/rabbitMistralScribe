@@ -7,8 +7,10 @@ async function clearDatabase() {
   console.log('🗑️  Starting database cleanup...');
   
   try {
-    // Get all keys - list() without parameters returns all keys
-    const keys = await db.list();
+    // Get all keys - list() returns a string with keys separated by newlines
+    const keysString = await db.list();
+    const keys = keysString ? keysString.split('\n').filter(k => k.length > 0) : [];
+    
     console.log(`📊 Found ${keys.length} keys in database`);
     
     if (keys.length === 0) {
