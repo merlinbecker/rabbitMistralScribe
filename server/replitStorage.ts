@@ -99,12 +99,10 @@ export class ReplitStorage implements IStorage {
 
   // User settings methods
   async getUserSettings(userId: string): Promise<UserSettings | undefined> {
-    console.log('[REPLIT_STORAGE] getUserSettings called for userId:', userId);
     const key = `user_settings:${userId}`;
     const data = await this.db.get(key);
 
     if (!data) {
-      console.log('[REPLIT_STORAGE] Settings not found for userId:', userId);
       return undefined;
     }
 
@@ -114,13 +112,11 @@ export class ReplitStorage implements IStorage {
 
       // First unwrap
       if (typeof data === 'object' && 'ok' in data && 'value' in data) {
-        console.log('[REPLIT_STORAGE] First unwrap - Replit DB response object');
         unwrappedData = data.value;
       }
 
       // Second unwrap: might still be wrapped
       if (typeof unwrappedData === 'object' && 'ok' in unwrappedData && 'value' in unwrappedData) {
-        console.log('[REPLIT_STORAGE] Second unwrap - nested Replit DB response object');
         unwrappedData = unwrappedData.value;
       }
 
@@ -128,14 +124,6 @@ export class ReplitStorage implements IStorage {
       const settings = typeof unwrappedData === 'string'
         ? JSON.parse(unwrappedData)
         : unwrappedData;
-
-      console.log('[REPLIT_STORAGE] Parsed settings object:', {
-        id: settings.id,
-        userId: settings.userId,
-        hasMistralKey: !!settings.mistralApiKey,
-        mistralKeyLength: settings.mistralApiKey?.length || 0,
-        allKeys: Object.keys(settings)
-      });
 
       return settings;
     } catch (error) {
@@ -211,21 +199,10 @@ export class ReplitStorage implements IStorage {
 
   // Recording methods
   async getRecording(id: string): Promise<Recording | undefined> {
-    console.log('[REPLIT_STORAGE] getRecording called for id:', id);
     const key = `recording:${id}`;
     const data = await this.db.get(key);
-    console.log('[REPLIT_STORAGE] Raw data from DB:', {
-      exists: !!data,
-      type: typeof data,
-      isString: typeof data === 'string',
-      isObject: typeof data === 'object',
-      hasOkField: data && typeof data === 'object' && 'ok' in data,
-      hasValueField: data && typeof data === 'object' && 'value' in data,
-      rawDataPreview: typeof data === 'string' ? data.substring(0, 100) : JSON.stringify(data).substring(0, 100)
-    });
 
     if (!data) {
-      console.log('[REPLIT_STORAGE] Recording not found:', id);
       return undefined;
     }
 
@@ -235,13 +212,11 @@ export class ReplitStorage implements IStorage {
 
       // First unwrap: {ok: true, value: {ok: true, value: "..."}}
       if (typeof data === 'object' && 'ok' in data && 'value' in data) {
-        console.log('[REPLIT_STORAGE] First unwrap - Replit DB response object');
         unwrappedData = data.value;
       }
 
       // Second unwrap: might still be wrapped
       if (typeof unwrappedData === 'object' && 'ok' in unwrappedData && 'value' in unwrappedData) {
-        console.log('[REPLIT_STORAGE] Second unwrap - nested Replit DB response object');
         unwrappedData = unwrappedData.value;
       }
 
@@ -249,15 +224,6 @@ export class ReplitStorage implements IStorage {
       const recording = typeof unwrappedData === 'string'
         ? JSON.parse(unwrappedData)
         : unwrappedData;
-
-      console.log('[REPLIT_STORAGE] Parsed recording object:', {
-        id: recording.id,
-        userId: recording.userId,
-        status: recording.status,
-        hasAudio: !!recording.audioUrl,
-        audioLength: recording.audioUrl?.length || 0,
-        allKeys: Object.keys(recording)
-      });
 
       return recording;
     } catch (error) {
