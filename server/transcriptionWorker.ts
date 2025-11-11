@@ -4,8 +4,7 @@ import { storage } from './storage';
 
 export class TranscriptionWorker {
   private static isRunning = false;
-  private static pollInterval: NodeJS.Timeout | null = null;
-  private static readonly POLL_INTERVAL_MS = 5000; // 5 seconds
+  private static isProcessing = false;
 
   static start(): void {
     if (this.isRunning) {
@@ -14,66 +13,79 @@ export class TranscriptionWorker {
     }
 
     this.isRunning = true;
-    console.log('[WORKER] ✅ Started - polling every', this.POLL_INTERVAL_MS / 1000, 'seconds');
-
-    // Start polling immediately
-    this.processQueue();
-
-    // Then continue polling
-    this.pollInterval = setInterval(() => {
-      this.processQueue();
-    }, this.POLL_INTERVAL_MS);
+    console.log('[WORKER] ✅ Started - push-based processing enabled');
   }
 
   static stop(): void {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
     this.isRunning = false;
     console.log('[WORKER] Stopped');
   }
 
+  // Called when a new job is enqueued
+  static async notifyNewJob(): Promise<void> {
+    if (!this.isRunning) {
+      console.log('[WORKER] Not running, ignoring notification');
+      return;
+    }
+
+    // If already processing, the current processQueue will continue
+    if (this.isProcessing) {
+      console.log('[WORKER] Already processing, new job will be picked up automatically');
+      return;
+    }
+
+    console.log('[WORKER] 🔔 New job notification received, starting processing');
+    await this.processQueue();
+  }
+
   private static async processQueue(): Promise<void> {
+    // Mark as processing to prevent concurrent execution
+    this.isProcessing = true;
+
     try {
-      const job = await JobQueue.dequeue();
-      
-      if (!job) {
-        // No jobs in queue
-        return;
-      }
-
-      console.log('[WORKER] Processing job:', job.id, 'recording:', job.recordingId);
-
-      try {
-        await this.transcribeRecording(job.recordingId, job.userId);
-        await JobQueue.markCompleted(job.id);
-        console.log('[WORKER] ✅ Job completed:', job.id);
-      } catch (error) {
-        console.error('[WORKER] ❌ Job failed:', job.id, error);
+      // Process jobs until queue is empty
+      while (this.isRunning) {
+        const job = await JobQueue.dequeue();
         
-        if (job.attempts < 3) {
-          // Requeue for retry
-          await JobQueue.requeue(job.id);
-          console.log('[WORKER] Job requeued for retry:', job.id);
-        } else {
-          // Max attempts reached
-          await JobQueue.markFailed(job.id, error instanceof Error ? error.message : 'Unknown error');
-          
-          // Also mark recording as failed
-          await storage.updateRecording(job.recordingId, { status: 'failed' });
+        if (!job) {
+          // Queue is empty
+          console.log('[WORKER] Queue is empty, waiting for new jobs');
+          break;
         }
-      }
 
-      // Process next job immediately if available
-      const pendingCount = await JobQueue.getPendingCount();
-      if (pendingCount > 0) {
-        console.log('[WORKER] 📋', pendingCount, 'jobs pending, processing next...');
-        // Use setTimeout to avoid blocking
-        setTimeout(() => this.processQueue(), 100);
+        console.log('[WORKER] Processing job:', job.id, 'recording:', job.recordingId);
+
+        try {
+          await this.transcribeRecording(job.recordingId, job.userId);
+          await JobQueue.markCompleted(job.id);
+          console.log('[WORKER] ✅ Job completed:', job.id);
+        } catch (error) {
+          console.error('[WORKER] ❌ Job failed:', job.id, error);
+          
+          if (job.attempts < 3) {
+            // Requeue for retry
+            await JobQueue.requeue(job.id);
+            console.log('[WORKER] Job requeued for retry:', job.id);
+          } else {
+            // Max attempts reached
+            await JobQueue.markFailed(job.id, error instanceof Error ? error.message : 'Unknown error');
+            
+            // Also mark recording as failed
+            await storage.updateRecording(job.recordingId, { status: 'failed' });
+          }
+        }
+
+        // Check pending count for logging
+        const pendingCount = await JobQueue.getPendingCount();
+        if (pendingCount > 0) {
+          console.log('[WORKER] 📋', pendingCount, 'jobs remaining in queue');
+        }
       }
     } catch (error) {
       console.error('[WORKER] Error processing queue:', error);
+    } finally {
+      // Mark as no longer processing
+      this.isProcessing = false;
     }
   }
 
