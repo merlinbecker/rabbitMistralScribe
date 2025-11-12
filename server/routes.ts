@@ -524,7 +524,62 @@ ${recording.transcript || 'Kein Transkript verfügbar'}
     });
   }
 
+  // Health check endpoint for production monitoring
+  app.get('/health', async (req, res) => {
+    try {
+      // Check database connection
+      await databaseService.get('health-check');
+      
+      // Check worker status
+      const workerStatus = transcriptionWorker.getStatus();
+      
+      res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+          database: 'up',
+          worker: workerStatus ? 'up' : 'down',
+        },
+        environment: process.env.NODE_ENV || 'development',
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(503).json({ 
+        status: 'unhealthy', 
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   const httpServer = createServer(app);
+
+  // Graceful shutdown handling
+  const gracefulShutdown = (signal: string) => {
+    console.log(`\n[SERVER] ${signal} received. Starting graceful shutdown...`);
+    
+    // Stop accepting new connections
+    httpServer.close(() => {
+      console.log('[SERVER] HTTP server closed');
+      
+      // Stop the transcription worker
+      transcriptionWorker.stop();
+      console.log('[SERVER] Transcription worker stopped');
+      
+      console.log('[SERVER] Graceful shutdown complete');
+      process.exit(0);
+    });
+    
+    // Force shutdown after 10 seconds
+    setTimeout(() => {
+      console.error('[SERVER] Could not close connections in time, forcefully shutting down');
+      process.exit(1);
+    }, 10000);
+  };
+
+  // Register shutdown handlers
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   return httpServer;
 }
