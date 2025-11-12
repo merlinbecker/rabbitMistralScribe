@@ -9,12 +9,14 @@ import { insertRecordingSchema, updateRecordingSchema, updateUserSettingsSchema 
 import { z } from "zod";
 import { JobQueue } from "./jobQueue";
 import { TranscriptionWorker } from "./transcriptionWorker";
+import { MistralService } from "./mistralService";
 
 // Create singleton instances with dependency injection
 // AuthenticationService handles all OAuth operations
 const authService = new AuthenticationService(storage);
+const mistralService = new MistralService();
 const jobQueue = new JobQueue(databaseService);
-const transcriptionWorker = new TranscriptionWorker(jobQueue, storage);
+const transcriptionWorker = new TranscriptionWorker(jobQueue, storage, mistralService);
 
 // Multer setup for file uploads
 const upload = multer({
@@ -410,85 +412,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const audioData = recording.audioUrl.split(',')[1];
       const audioBuffer = Buffer.from(audioData, 'base64');
 
-      // Call Mistral Voxtral API for transcription
-      const mistralSTTModel = process.env.MISTRAL_STT_MODEL || 'voxtral-24.02';
-      const formData = new FormData();
-      formData.append('file', new Blob([audioBuffer]), 'audio.webm');
-      formData.append('model', mistralSTTModel);
+      // Use MistralService for transcription
+      const transcriptionResult = await mistralService.transcribeAudio(audioBuffer, settings.mistralApiKey);
+      const transcript = transcriptionResult.text;
 
-      const transcriptionResponse = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.mistralApiKey}`,
-        },
-        body: formData,
-      });
+      // Use MistralService for summarization
+      const summaryResult = await mistralService.summarizeText(
+        transcript,
+        settings.mistralApiKey,
+        settings.summaryTemplate || undefined
+      );
+      const summary = summaryResult.summary;
 
-      if (!transcriptionResponse.ok) {
-        throw new Error(`Transcription failed: ${transcriptionResponse.statusText}`);
-      }
-
-      const transcriptionData = await transcriptionResponse.json();
-      const transcript = transcriptionData.text;
-
-      // Now summarize with Mistral Agent
-      const summaryResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.mistralApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-          messages: [
-            {
-              role: 'system',
-              content: 'Du bist ein Assistent, der Audio-Notizen zusammenfasst. Erstelle eine strukturierte Zusammenfassung im Markdown-Format mit Hauptpunkten und wichtigen Details.'
-            },
-            {
-              role: 'user',
-              content: `Bitte fasse diese Notiz zusammen:\n\n${transcript}`
-            }
-          ],
-        }),
-      });
-
-      if (!summaryResponse.ok) {
-        throw new Error(`Summarization failed: ${summaryResponse.statusText}`);
-      }
-
-      const summaryData = await summaryResponse.json();
-      const summary = summaryData.choices[0].message.content;
-
-      // Generate title (one-line description)
-      const titleResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.mistralApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-          messages: [
-            {
-              role: 'system',
-              content: 'Du bist ein Assistent, der prägnante Titel erstellt. Erstelle einen einzeiligen Titel (maximal 60 Zeichen) der die Hauptidee zusammenfasst. Antworte nur mit dem Titel, ohne Anführungszeichen oder zusätzlichen Text.'
-            },
-            {
-              role: 'user',
-              content: `Erstelle einen kurzen Titel für diese Notiz:\n\n${transcript}`
-            }
-          ],
-        }),
-      });
-
+      // Use MistralService for title generation
       let title = 'Audio-Notiz';
-      if (titleResponse.ok) {
-        const titleData = await titleResponse.json();
-        title = titleData.choices[0].message.content.trim();
-        if (title.length > 60) {
-          title = title.substring(0, 57) + '...';
-        }
+      try {
+        const titleResult = await mistralService.generateTitle(transcript, settings.mistralApiKey);
+        title = titleResult.title;
+      } catch (error) {
+        console.warn('Title generation failed, using default:', error);
       }
 
       // Update recording with transcript and summary
