@@ -11,6 +11,7 @@ import { JobQueue } from "./jobQueue";
 import { TranscriptionWorker } from "./transcriptionWorker";
 
 // Create singleton instances with dependency injection
+// AuthenticationService handles all OAuth operations
 const authService = new AuthenticationService(storage);
 const jobQueue = new JobQueue(databaseService);
 const transcriptionWorker = new TranscriptionWorker(jobQueue, storage);
@@ -97,18 +98,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Authenticate with GitHub OAuth code
       const result = await authService.authenticateWithCode(code);
 
       if (!result.success || !result.user) {
         return res.redirect(`/?error=${result.error || 'oauth_failed'}`);
       }
 
-      // Create session for user
       try {
         await authService.createSession(req, result.user.id);
         console.log('[AUTH] SessionID:', req.sessionID);
-        // Redirect with token in URL for client to store
         res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] Session creation failed:', sessionError);
@@ -120,17 +118,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Endpoint to get session token for localStorage
   app.get('/api/auth/token', requireAuth, async (req, res) => {
     const userId = authService.getUserIdFromRequest(req);
     if (!userId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    // Return a session token (using userId as token for simplicity)
     res.json({
       token: userId,
-      expiresIn: 30 * 24 * 60 * 60 // 30 days in seconds
+      expiresIn: 30 * 24 * 60 * 60
     });
   });
 
@@ -152,7 +148,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     console.log('[AUTH] User found:', { id: safeUser.id, username: safeUser.username });
 
-    // Trigger worker to process any pending jobs for this user
     transcriptionWorker.notifyNewJob().catch(err => 
       console.error('[AUTH] Failed to notify worker on login:', err)
     );
