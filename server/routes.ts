@@ -4,12 +4,14 @@ import session from "express-session";
 import multer from "multer";
 import { storage, databaseService } from "./storage";
 import { ReplitSessionStore } from "./replitSessionStore";
+import { AuthenticationService } from "./authenticationService";
 import { insertRecordingSchema, updateRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
 import { z } from "zod";
 import { JobQueue } from "./jobQueue";
 import { TranscriptionWorker } from "./transcriptionWorker";
 
-// Create singleton instances for job queue and worker
+// Create singleton instances with dependency injection
+const authService = new AuthenticationService(storage);
 const jobQueue = new JobQueue(databaseService);
 const transcriptionWorker = new TranscriptionWorker(jobQueue, storage);
 
@@ -26,39 +28,19 @@ declare module 'express-session' {
   }
 }
 
-// Auth middleware with Bearer token support
+// Auth middleware using AuthenticationService
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  let userId = req.session.userId;
-
-  // Check for Bearer token if session is not available
-  if (!userId) {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      userId = authHeader.substring(7);
-      console.log('[AUTH] Using Bearer token for auth, userId:', userId);
-    }
-  }
-
-  if (!userId) {
-    console.log('[AUTH] No authentication found - session userId:', req.session.userId, 'sessionID:', req.sessionID);
+  const user = await authService.authenticateRequest(req);
+  
+  if (!user) {
+    console.log('[AUTH] Authentication failed - sessionID:', req.sessionID);
     return res.status(401).json({
       error: 'Unauthorized',
       details: 'No session or valid Bearer token found'
     });
   }
 
-  // Verify user exists
-  const user = await storage.getUser(userId);
-  if (!user) {
-    console.log('[AUTH] User not found for userId:', userId);
-    return res.status(401).json({
-      error: 'Unauthorized',
-      details: 'User not found'
-    });
-  }
-
-  // Store userId in session for consistency
-  req.session.userId = userId;
+  console.log('[AUTH] User authenticated:', user.id);
   next();
 }
 
@@ -91,123 +73,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GitHub OAuth routes
   app.get('/api/auth/github', (req, res) => {
-    const clientId = process.env.GITHUB_CLIENT_ID;
-
-    if (!clientId) {
+    if (!authService.isConfigured()) {
       return res.status(500).send('GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.');
     }
 
-    // Construct the correct redirect URI using the request protocol and host
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const redirectUri = `${protocol}://${host}/api/auth/github/callback`;
-    const scope = 'repo,user';
+    const authUrl = authService.getAuthorizationUrl(req);
+    if (!authUrl) {
+      return res.status(500).send('Failed to generate authorization URL');
+    }
 
-    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}`;
     res.redirect(authUrl);
   });
 
   app.get('/api/auth/github/callback', async (req, res) => {
     const { code } = req.query;
 
-    if (!code) {
+    if (!code || typeof code !== 'string') {
       return res.redirect('/?error=no_code');
     }
 
-    if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
+    if (!authService.isConfigured()) {
       return res.redirect('/?error=oauth_not_configured');
     }
 
     try {
-      // Exchange code for access token
-      const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: process.env.GITHUB_CLIENT_ID,
-          client_secret: process.env.GITHUB_CLIENT_SECRET,
-          code,
-        }),
-      });
+      // Authenticate with GitHub OAuth code
+      const result = await authService.authenticateWithCode(code);
 
-      const tokenData = await tokenResponse.json();
-      const accessToken = tokenData.access_token;
-
-      if (!accessToken) {
-        return res.redirect('/?error=no_token');
+      if (!result.success || !result.user) {
+        return res.redirect(`/?error=${result.error || 'oauth_failed'}`);
       }
 
-      // Get user info from GitHub
-      const userResponse = await fetch('https://api.github.com/user', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
-      });
-
-      const githubUser = await userResponse.json();
-
-      // Find or create user
-      let user = await storage.getUserByGitHubId(githubUser.id.toString());
-
-      if (!user) {
-        user = await storage.createUser({
-          githubId: githubUser.id.toString(),
-          username: githubUser.login,
-          avatarUrl: githubUser.avatar_url,
-          accessToken,
-        });
-
-        // Create default settings
-        await storage.createUserSettings({
-          userId: user.id,
-          mistralApiKey: null,
-          githubRepoOwner: null,
-          githubRepoName: null,
-        });
-      } else {
-        // Update access token if it changed
-        if (user.accessToken !== accessToken) {
-          await storage.updateUser(user.id, {
-            accessToken: accessToken
-          });
-        }
-      }
-
-      // Create session and save it
-      req.session.userId = user.id;
-
-      // Save session and wait for it to complete before redirecting
-      req.session.save((err) => {
-        if (err) {
-          console.error('[AUTH] Session save error:', err);
-          return res.redirect('/?error=session_failed');
-        }
-        console.log('[AUTH] Session saved successfully for user:', user.id);
+      // Create session for user
+      try {
+        await authService.createSession(req, result.user.id);
         console.log('[AUTH] SessionID:', req.sessionID);
         // Redirect with token in URL for client to store
-        res.redirect(`/?authenticated=true&token=${encodeURIComponent(user.id)}`);
-      });
+        res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
+      } catch (sessionError) {
+        console.error('[AUTH] Session creation failed:', sessionError);
+        return res.redirect('/?error=session_failed');
+      }
     } catch (error) {
-      console.error('GitHub OAuth error:', error);
+      console.error('[AUTH] OAuth callback error:', error);
       res.redirect('/?error=oauth_failed');
     }
   });
 
-  // New endpoint to get session token for localStorage
+  // Endpoint to get session token for localStorage
   app.get('/api/auth/token', requireAuth, async (req, res) => {
-    const user = await storage.getUser(req.session.userId!);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    const userId = authService.getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
     }
 
     // Return a session token (using userId as token for simplicity)
-    // In production, you'd want to generate a proper JWT
     res.json({
-      token: req.session.userId,
+      token: userId,
       expiresIn: 30 * 24 * 60 * 60 // 30 days in seconds
     });
   });
@@ -215,47 +137,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/auth/user', async (req, res) => {
     console.log('[AUTH] /api/auth/user called');
     console.log('[AUTH] Session ID:', req.sessionID);
-    console.log('[AUTH] Session userId:', req.session.userId);
 
-    // Check for Bearer token first
-    const authHeader = req.headers.authorization;
-    let userId = req.session.userId;
-
-    if (!userId && authHeader?.startsWith('Bearer ')) {
-      userId = authHeader.substring(7); // Remove 'Bearer ' prefix
-      console.log('[AUTH] Using Bearer token, userId:', userId);
-    }
-
+    const userId = authService.getUserIdFromRequest(req);
     if (!userId) {
       console.log('[AUTH] No userId found in session or token');
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const user = await storage.getUser(userId);
-    if (!user) {
+    const safeUser = await authService.getSafeUser(userId);
+    if (!safeUser) {
       console.log('[AUTH] User not found for userId:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('[AUTH] User found:', { id: user.id, username: user.username });
+    console.log('[AUTH] User found:', { id: safeUser.id, username: safeUser.username });
 
     // Trigger worker to process any pending jobs for this user
     transcriptionWorker.notifyNewJob().catch(err => 
       console.error('[AUTH] Failed to notify worker on login:', err)
     );
 
-    // Don't send access token to frontend
-    const { accessToken, ...safeUser } = user;
     res.json(safeUser);
   });
 
-  app.post('/api/auth/logout', (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Logout failed' });
-      }
+  app.post('/api/auth/logout', async (req, res) => {
+    try {
+      await authService.destroySession(req);
       res.json({ success: true, clearToken: true });
-    });
+    } catch (error) {
+      console.error('[AUTH] Logout failed:', error);
+      res.status(500).json({ error: 'Logout failed' });
+    }
   });
 
   // Settings routes
