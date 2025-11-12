@@ -46,6 +46,11 @@ export class TranscriptionWorker {
     console.log('[WORKER] ✅ Stopped');
   }
 
+  // Check if worker is running (for health checks)
+  getStatus(): boolean {
+    return this.isRunning;
+  }
+
   // Called when a new job is enqueued
   async notifyNewJob(): Promise<void> {
     console.log('[WORKER] 🔔 notifyNewJob() called');
