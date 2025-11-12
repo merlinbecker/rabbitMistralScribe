@@ -1,6 +1,4 @@
-import Database from "@replit/database";
-
-const db = new Database();
+import type { DatabaseService } from "./databaseService";
 
 export interface TranscriptionJob {
   id: string;
@@ -14,11 +12,16 @@ export interface TranscriptionJob {
 }
 
 export class JobQueue {
-  private static readonly QUEUE_PREFIX = 'job:transcription:';
-  private static readonly MAX_ATTEMPTS = 3;
+  private readonly QUEUE_PREFIX = 'job:transcription:';
+  private readonly MAX_ATTEMPTS = 3;
+  private db: DatabaseService;
+
+  constructor(databaseService: DatabaseService) {
+    this.db = databaseService;
+  }
 
   // Add job to queue
-  static async enqueue(recordingId: string, userId: string): Promise<string> {
+  async enqueue(recordingId: string, userId: string): Promise<string> {
     console.log('[JOBQUEUE] ========================================');
     console.log('[JOBQUEUE] enqueue() called');
     console.log('[JOBQUEUE] Recording ID:', recordingId);
@@ -38,59 +41,28 @@ export class JobQueue {
     console.log('[JOBQUEUE] 🔄 Saving job to database...');
     console.log('[JOBQUEUE] Job details:', job);
 
-    await db.set(`job:transcription:${jobId}`, JSON.stringify(job));
+    await this.db.set(`${this.QUEUE_PREFIX}${jobId}`, job);
 
     console.log('[JOBQUEUE] ✅ Job saved to database');
-    console.log('[JOBQUEUE] Database key:', `job:transcription:${jobId}`);
+    console.log('[JOBQUEUE] Database key:', `${this.QUEUE_PREFIX}${jobId}`);
     console.log('[JOBQUEUE] ========================================');
 
     return jobId;
   }
 
   // Get next pending job
-  static async dequeue(): Promise<TranscriptionJob | null> {
-    const keysResponse = await db.list(this.QUEUE_PREFIX);
-    
-    // Unwrap Replit DB response
-    let keys: string[] = [];
-    if (keysResponse && typeof keysResponse === 'object' && 'ok' in keysResponse && 'value' in keysResponse) {
-      keys = keysResponse.value || [];
-    } else if (Array.isArray(keysResponse)) {
-      keys = keysResponse;
-    }
-
+  async dequeue(): Promise<TranscriptionJob | null> {
+    const keys = await this.db.list(this.QUEUE_PREFIX);
     console.log('[QUEUE] Keys found:', keys);
 
     for (const key of keys) {
       console.log('[QUEUE] Fetching job data for key:', key);
-      const rawData = await db.get(key);
+      const job = await this.db.get<TranscriptionJob>(key);
 
-      console.log('[QUEUE] Raw data received:', typeof rawData, rawData);
-
-      if (!rawData) {
+      if (!job) {
         console.log('[QUEUE] No data found for key:', key);
         continue;
       }
-
-      // Unwrap Replit DB response if needed
-      let jobData: string;
-      if (typeof rawData === 'object' && rawData !== null) {
-        // Check if it's a Replit DB wrapper object
-        if ('ok' in rawData && 'value' in rawData) {
-          console.log('[QUEUE] Unwrapping wrapper object, value type:', typeof rawData.value);
-          jobData = rawData.value as string;
-        } else {
-          // It's an object but not a wrapper - stringify it
-          console.log('[QUEUE] Converting object to string');
-          jobData = JSON.stringify(rawData);
-        }
-      } else {
-        jobData = rawData as string;
-      }
-
-      console.log('[QUEUE] Job data to parse:', jobData.substring(0, 100));
-
-      const job = JSON.parse(jobData) as TranscriptionJob;
 
       // Skip jobs that are already processing or completed
       if (job.status !== 'pending') continue;
@@ -104,7 +76,7 @@ export class JobQueue {
       // Mark as processing
       job.status = 'processing';
       job.attempts++;
-      await db.set(key, JSON.stringify(job));
+      await this.db.set(key, job);
 
       console.log('[QUEUE] Job dequeued:', job.id, 'attempt:', job.attempts);
       return job;
@@ -114,25 +86,15 @@ export class JobQueue {
   }
 
   // Mark job as completed
-  static async markCompleted(jobId: string): Promise<void> {
+  async markCompleted(jobId: string): Promise<void> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
-    const rawData = await db.get(key);
+    const job = await this.db.get<TranscriptionJob>(key);
+    if (!job) return;
 
-    if (!rawData) return;
-
-    // Unwrap Replit DB response if needed
-    let jobData: string;
-    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
-      jobData = rawData.value as string;
-    } else {
-      jobData = rawData as string;
-    }
-
-    const job = JSON.parse(jobData) as TranscriptionJob;
     job.status = 'completed';
     job.processedAt = new Date().toISOString();
 
-    await db.set(key, JSON.stringify(job));
+    await this.db.set(key, job);
     console.log('[QUEUE] Job completed:', jobId);
 
     // Cleanup after 1 hour
@@ -140,104 +102,53 @@ export class JobQueue {
   }
 
   // Mark job as failed
-  static async markFailed(jobId: string, error: string): Promise<void> {
+  async markFailed(jobId: string, error: string): Promise<void> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
-    const rawData = await db.get(key);
+    const job = await this.db.get<TranscriptionJob>(key);
+    if (!job) return;
 
-    if (!rawData) return;
-
-    // Unwrap Replit DB response if needed
-    let jobData: string;
-    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
-      jobData = rawData.value as string;
-    } else {
-      jobData = rawData as string;
-    }
-
-    const job = JSON.parse(jobData) as TranscriptionJob;
     job.status = 'failed';
     job.error = error;
     job.processedAt = new Date().toISOString();
 
-    await db.set(key, JSON.stringify(job));
+    await this.db.set(key, job);
     console.error('[QUEUE] Job failed:', jobId, error);
   }
 
   // Requeue job (set back to pending)
-  static async requeue(jobId: string): Promise<void> {
+  async requeue(jobId: string): Promise<void> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
-    const rawData = await db.get(key);
+    const job = await this.db.get<TranscriptionJob>(key);
+    if (!job) return;
 
-    if (!rawData) return;
-
-    // Unwrap Replit DB response if needed
-    let jobData: string;
-    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
-      jobData = rawData.value as string;
-    } else {
-      jobData = rawData as string;
-    }
-
-    const job = JSON.parse(jobData) as TranscriptionJob;
     job.status = 'pending';
 
-    await db.set(key, JSON.stringify(job));
+    await this.db.set(key, job);
     console.log('[QUEUE] Job requeued:', jobId);
   }
 
   // Cleanup completed job
-  static async cleanup(jobId: string): Promise<void> {
+  async cleanup(jobId: string): Promise<void> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
-    await db.delete(key);
+    await this.db.delete(key);
     console.log('[QUEUE] Job cleaned up:', jobId);
   }
 
   // Get job status
-  static async getJob(jobId: string): Promise<TranscriptionJob | null> {
+  async getJob(jobId: string): Promise<TranscriptionJob | null> {
     const key = `${this.QUEUE_PREFIX}${jobId}`;
-    const rawData = await db.get(key);
-
-    if (!rawData) return null;
-
-    // Unwrap Replit DB response if needed
-    let jobData: string;
-    if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
-      jobData = rawData.value as string;
-    } else {
-      jobData = rawData as string;
-    }
-
-    return JSON.parse(jobData) as TranscriptionJob;
+    const job = await this.db.get<TranscriptionJob>(key);
+    return job || null;
   }
 
   // Get pending jobs count
-  static async getPendingCount(): Promise<number> {
-    const keysResponse = await db.list(this.QUEUE_PREFIX);
-    
-    // Unwrap Replit DB response
-    let keys: string[] = [];
-    if (keysResponse && typeof keysResponse === 'object' && 'ok' in keysResponse && 'value' in keysResponse) {
-      keys = keysResponse.value || [];
-    } else if (Array.isArray(keysResponse)) {
-      keys = keysResponse;
-    }
-    
+  async getPendingCount(): Promise<number> {
+    const keys = await this.db.list(this.QUEUE_PREFIX);
     let count = 0;
 
     for (const key of keys) {
-      const rawData = await db.get(key);
-      if (!rawData) continue;
-
-      // Unwrap Replit DB response if needed
-      let jobData: string;
-      if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData) {
-        jobData = rawData.value as string;
-      } else {
-        jobData = rawData as string;
-      }
-
-      const job = JSON.parse(jobData) as TranscriptionJob;
-      if (job.status === 'pending') count++;
+      const job = await this.db.get<TranscriptionJob>(key);
+      if (job && job.status === 'pending') count++;
     }
 
     return count;

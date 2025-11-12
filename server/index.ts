@@ -1,7 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { TranscriptionWorker } from "./transcriptionWorker";
 
 const app = express();
 
@@ -78,17 +77,5 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
-
-    // Start transcription worker
-    console.log('[SERVER] ========================================');
-    console.log('[SERVER] Initializing Transcription Worker');
-    console.log('[SERVER] Timestamp:', new Date().toISOString());
-    console.log('[SERVER] ========================================');
-    
-    TranscriptionWorker.start();
-    
-    console.log('[SERVER] ========================================');
-    console.log('[SERVER] Transcription Worker initialization complete');
-    console.log('[SERVER] ========================================');
   });
 })();

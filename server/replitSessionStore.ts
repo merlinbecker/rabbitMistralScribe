@@ -1,13 +1,13 @@
 
 import session from "express-session";
-import Database from "@replit/database";
+import type { DatabaseService } from "./databaseService";
 
 export class ReplitSessionStore extends session.Store {
-  private db: Database;
+  private db: DatabaseService;
   
-  constructor() {
+  constructor(databaseService: DatabaseService) {
     super();
-    this.db = new Database();
+    this.db = databaseService;
   }
   
   private sessionKey(sid: string): string {
@@ -16,41 +16,15 @@ export class ReplitSessionStore extends session.Store {
   
   async get(sid: string, callback: (err: any, session?: session.SessionData | null) => void): Promise<void> {
     try {
-      const rawData = await this.db.get(this.sessionKey(sid));
+      const sessionData = await this.db.get<session.SessionData>(this.sessionKey(sid));
       
-      // Check if data exists and is not an error object from Replit DB
-      if (!rawData || (typeof rawData === 'object' && 'ok' in rawData && !rawData.ok)) {
+      if (!sessionData) {
         callback(null, null);
         return;
-      }
-      
-      // Unwrap Replit DB response if it's wrapped in {ok: true, value: "..."}
-      let dataToProcess = rawData;
-      if (typeof rawData === 'object' && 'ok' in rawData && 'value' in rawData && rawData.ok) {
-        dataToProcess = rawData.value;
-      }
-      
-      // Parse the session data if it's stored as JSON string
-      let sessionData;
-      if (typeof dataToProcess === 'string') {
-        try {
-          sessionData = JSON.parse(dataToProcess);
-        } catch (e) {
-          callback(null, null);
-          return;
-        }
-      } else {
-        sessionData = dataToProcess;
       }
       
       // Validate session data structure
-      if (!sessionData || typeof sessionData !== 'object') {
-        callback(null, null);
-        return;
-      }
-      
-      // Ensure cookie object exists with required properties
-      if (!sessionData.cookie || typeof sessionData.cookie !== 'object') {
+      if (typeof sessionData !== 'object' || !sessionData.cookie || typeof sessionData.cookie !== 'object') {
         callback(null, null);
         return;
       }
@@ -85,11 +59,7 @@ export class ReplitSessionStore extends session.Store {
         }
       };
       
-      const jsonString = JSON.stringify(sessionCopy);
-      
-      // Store as JSON string to ensure proper serialization
-      await this.db.set(this.sessionKey(sid), jsonString);
-      
+      await this.db.set(this.sessionKey(sid), sessionCopy);
       callback?.();
     } catch (error) {
       console.error('[SESSION_STORE] Error setting session:', error);
@@ -124,7 +94,7 @@ export class ReplitSessionStore extends session.Store {
       
       for (const key of keys) {
         const sid = key.replace('session:', '');
-        const session = await this.db.get(key);
+        const session = await this.db.get<session.SessionData>(key);
         if (session) {
           sessions[sid] = session;
         }

@@ -2,12 +2,16 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import multer from "multer";
-import { storage } from "./storage";
+import { storage, databaseService } from "./storage";
 import { ReplitSessionStore } from "./replitSessionStore";
 import { insertRecordingSchema, updateRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
 import { z } from "zod";
 import { JobQueue } from "./jobQueue";
 import { TranscriptionWorker } from "./transcriptionWorker";
+
+// Create singleton instances for job queue and worker
+const jobQueue = new JobQueue(databaseService);
+const transcriptionWorker = new TranscriptionWorker(jobQueue, storage);
 
 // Multer setup for file uploads
 const upload = multer({
@@ -60,7 +64,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Start background transcription worker
-  TranscriptionWorker.start();
+  transcriptionWorker.start();
   console.log('[SERVER] 🚀 Background transcription worker started');
 
   // Serve service worker with correct MIME type
@@ -73,7 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Session configuration with Replit Database Store
   app.use(
     session({
-      store: new ReplitSessionStore(),
+      store: new ReplitSessionStore(databaseService),
       secret: process.env.SESSION_SECRET || 'audio-notes-secret-key',
       resave: false,
       saveUninitialized: false,
@@ -236,7 +240,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[AUTH] User found:', { id: user.id, username: user.username });
 
     // Trigger worker to process any pending jobs for this user
-    TranscriptionWorker.notifyNewJob().catch(err => 
+    transcriptionWorker.notifyNewJob().catch(err => 
       console.error('[AUTH] Failed to notify worker on login:', err)
     );
 
@@ -412,19 +416,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[ROUTES] User ID:', req.session.userId);
       console.log('[ROUTES] ========================================');
 
-      await JobQueue.enqueue({
-        recordingId: createdRecording.id,
-        userId: req.session.userId!,
-      });
+      await jobQueue.enqueue(createdRecording.id, req.session.userId!);
 
       // Notify worker of new job
       console.log('[ROUTES] ========================================');
       console.log('[ROUTES] 🔔 NOTIFYING WORKER OF NEW JOB');
-      console.log('[ROUTES] About to call TranscriptionWorker.notifyNewJob()');
+      console.log('[ROUTES] About to call transcriptionWorker.notifyNewJob()');
       console.log('[ROUTES] ========================================');
 
       try {
-        await TranscriptionWorker.notifyNewJob();
+        await transcriptionWorker.notifyNewJob();
 
         console.log('[ROUTES] ========================================');
         console.log('[ROUTES] ✅ WORKER NOTIFICATION COMPLETED');
