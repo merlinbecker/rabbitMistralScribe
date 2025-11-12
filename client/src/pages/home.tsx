@@ -106,6 +106,20 @@ export default function Home() {
     return () => window.removeEventListener('sideClick', handleSideClick);
   }, [isRecording]);
 
+  // Keyboard fallback for sideClick in development (Ctrl+S)
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 's' && e.ctrlKey) {
+        e.preventDefault();
+        // Simulate sideClick event
+        window.dispatchEvent(new Event('sideClick'));
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
+
   // Timer for recording
   useEffect(() => {
     if (isRecording) {
