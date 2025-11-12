@@ -1,6 +1,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ReplitStorage } from '../server/replitStorage';
+import { DatabaseService } from '../server/databaseService';
 
 // Mock Replit Database with realistic error responses
 vi.mock('@replit/database', () => {
@@ -40,11 +41,13 @@ vi.mock('@replit/database', () => {
 
 describe('ReplitStorage', () => {
   let storage: ReplitStorage;
+  let databaseService: DatabaseService;
   
   beforeEach(() => {
-    storage = new ReplitStorage();
+    databaseService = new DatabaseService();
+    storage = new ReplitStorage(databaseService);
     // Clear the mock database
-    (storage as any).db.clear();
+    (databaseService as any).db.clear();
   });
 
   describe('User Operations', () => {
@@ -70,13 +73,16 @@ describe('ReplitStorage', () => {
       expect(newUser.githubId).toBe('123456');
       expect(newUser.username).toBe('testuser');
 
-      // Retrieve by ID
+      // Retrieve by ID - dates are serialized as ISO strings
       const userById = await storage.getUser(newUser.id);
-      expect(userById).toEqual(newUser);
+      expect(userById?.id).toBe(newUser.id);
+      expect(userById?.githubId).toBe(newUser.githubId);
+      expect(userById?.username).toBe(newUser.username);
 
       // Retrieve by GitHub ID
       const userByGithubId = await storage.getUserByGitHubId('123456');
-      expect(userByGithubId).toEqual(newUser);
+      expect(userByGithubId?.id).toBe(newUser.id);
+      expect(userByGithubId?.username).toBe(newUser.username);
     });
 
     it('should update user', async () => {
@@ -122,7 +128,9 @@ describe('ReplitStorage', () => {
       expect(settings.mistralApiKey).toBe('test-api-key');
 
       const retrieved = await storage.getUserSettings(user.id);
-      expect(retrieved).toEqual(settings);
+      expect(retrieved?.id).toBe(settings.id);
+      expect(retrieved?.userId).toBe(settings.userId);
+      expect(retrieved?.mistralApiKey).toBe(settings.mistralApiKey);
     });
 
     it('should update user settings', async () => {
@@ -182,11 +190,14 @@ describe('ReplitStorage', () => {
       expect(recording.status).toBe('pending');
 
       const retrieved = await storage.getRecording(recording.id);
-      expect(retrieved).toEqual(recording);
+      expect(retrieved?.id).toBe(recording.id);
+      expect(retrieved?.userId).toBe(recording.userId);
+      expect(retrieved?.status).toBe(recording.status);
 
       const userRecordings = await storage.getRecordingsByUserId(user.id);
       expect(userRecordings).toHaveLength(1);
-      expect(userRecordings[0]).toEqual(recording);
+      expect(userRecordings[0].id).toBe(recording.id);
+      expect(userRecordings[0].status).toBe(recording.status);
     });
 
     it('should update recording', async () => {

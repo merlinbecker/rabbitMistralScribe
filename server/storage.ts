@@ -164,8 +164,9 @@ export class MemStorage implements IStorage {
   async createRecording(insertRecording: InsertRecording): Promise<Recording> {
     const id = randomUUID();
     const recording: Recording = {
-      ...insertRecording,
       id,
+      userId: insertRecording.userId,
+      title: insertRecording.title ?? null,
       audioUrl: insertRecording.audioUrl ?? null,
       duration: insertRecording.duration ?? null,
       status: insertRecording.status || 'pending',
@@ -197,6 +198,16 @@ export class MemStorage implements IStorage {
   }
 }
 
+import { DatabaseService } from "./databaseService";
 import { ReplitStorage } from "./replitStorage";
+import Database from "@replit/database";
 
-export const storage = new ReplitStorage();
+// Create singleton DatabaseService instance
+const db = new Database();
+const databaseService = new DatabaseService(db);
+
+// Create storage instance with DatabaseService
+export const storage = new ReplitStorage(databaseService);
+
+// Export databaseService for use in other parts of the application
+export { databaseService };
