@@ -1,0 +1,133 @@
+name: SonarCloud Quality Radar
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [ develop ]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  quality-check:
+    name: SonarCloud Quality Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Check if PR has chore label and skip if it does
+      - name: Check if PR has chore label
+        id: check-label
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map(label => label.name);
+            const hasChoreLabel = labels.includes('chore');
+            console.log('PR labels:', labels);
+            console.log('Has chore label:', hasChoreLabel);
+            core.setOutput('should-run', !hasChoreLabel);
+            return !hasChoreLabel;
+
+      # Checkout code
+      - name: Checkout code
+        if: steps.check-label.outputs.should-run != 'false'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for better analysis
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+
+      # Setup Node.js
+      - name: Setup Node.js
+        if: steps.check-label.outputs.should-run != 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Install dependencies
+      - name: Install dependencies
+        if: steps.check-label.outputs.should-run != 'false'
+        run: npm ci
+
+      # Run tests with coverage
+      - name: Run tests with coverage
+        if: steps.check-label.outputs.should-run != 'false'
+        run: |
+          npm run test:ci
+
+      # Build the application
+      - name: Build application
+        if: steps.check-label.outputs.should-run != 'false'
+        run: npm run build || echo "No build script found"
+
+      # SonarCloud Scan
+      - name: SonarCloud Scan
+        if: steps.check-label.outputs.should-run != 'false'
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # Generate quality radar chart
+      - name: Generate Quality Radar Chart
+        if: steps.check-label.outputs.should-run != 'false'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: merlinbecker_rabbitMistralScribe
+          SONAR_BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+          OUTPUT_MD: codequality/report.md
+          SONAR_PREV_OFFSET: 1
+          SONAR_PREV_COUNT: 3
+        run: |
+          echo "📊 Generating quality radar chart with sonar-radar.mjs"
+          node sonar-radar.mjs
+          
+          echo "Generated codequality/report.md:"
+          cat codequality/report.md
+
+      # Commit and push the report
+      - name: Commit quality report
+        if: steps.check-label.outputs.should-run != 'false'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add codequality/report.md
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "Update code quality report [skip ci]"
+          
+          # Push to the appropriate branch
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PRs, push to the head branch
+            git push origin HEAD:${{ github.head_ref }}
+          else
+            # For direct pushes to develop
+            git push
+          fi
+
+      # Comment on PR with quality report
+      - name: Comment on PR with quality report
+        if: github.event_name == 'pull_request' && steps.check-label.outputs.should-run != 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const reportContent = fs.readFileSync('codequality/report.md', 'utf8');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## 📊 Code Quality Report\n\n${reportContent}`
+              });
+            } catch (error) {
+              console.log('Could not read or post quality report:', error.message);
+            }
