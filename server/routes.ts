@@ -71,7 +71,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cookie: {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Allow cross-site for OAuth
+        sameSite: 'lax', // 'lax' works better for same-site OAuth redirects
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       },
     })
@@ -164,6 +164,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/auth/user', async (req, res) => {
     console.log('[AUTH] /api/auth/user called');
     console.log('[AUTH] Session ID:', req.sessionID);
+    console.log('[AUTH] Cookies received:', req.headers.cookie);
+    console.log('[AUTH] Session data:', req.session);
 
     const userId = authService.getUserIdFromRequest(req);
     if (!userId) {
