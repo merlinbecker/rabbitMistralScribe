@@ -9,7 +9,7 @@ export default function Auth() {
   const [, setLocation] = useLocation();
   // Assume setError and checkAuthStatus are defined elsewhere or passed as props
   // For this example, we'll mock them to avoid errors. In a real app, they'd be imported or defined.
-  const setError = (message) => console.error(message);
+  const setError = (message: string) => console.error(message);
   const checkAuthStatus = () => {
     console.log("Checking auth status...");
     // Placeholder for actual auth status check logic

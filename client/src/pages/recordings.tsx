@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RecordingsList } from '@/components/RecordingsList';
+import { useRequireApiKey } from '@/hooks/useRequireApiKey';
 import { Recording } from '@shared/schema';
 import { ArrowLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,8 @@ import { Link } from 'wouter';
 import { indexedDB } from '@/lib/indexedDB';
 
 export default function Recordings() {
+  // Check if API key is configured and redirect to settings if not
+  useRequireApiKey();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 

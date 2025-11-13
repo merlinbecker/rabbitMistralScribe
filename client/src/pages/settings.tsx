@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Check, ExternalLink, LogOut } from 'lucide-react';
+import { ArrowLeft, Check, ExternalLink, LogOut, AlertCircle } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient, clearStoredToken } from '@/lib/queryClient';
@@ -17,6 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -68,12 +73,20 @@ export default function Settings() {
     mutationFn: async (data: UpdateUserSettings) => {
       return await apiRequest('PATCH', '/api/settings', data);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/settings'] });
       toast({
         title: 'Einstellungen gespeichert',
         description: 'Ihre Änderungen wurden erfolgreich gespeichert.',
       });
+      
+      // If API key was just saved and we were in required mode, redirect to home
+      if (isApiKeyRequired && apiKey) {
+        console.log('[SETTINGS] API key saved - redirecting to home');
+        setTimeout(() => {
+          setLocation('/');
+        }, 500); // Small delay to let user see the success message
+      }
     },
     onError: () => {
       toast({
@@ -83,6 +96,21 @@ export default function Settings() {
       });
     },
   });
+
+  // Check if API key is required (not yet configured)
+  const isApiKeyRequired = !settings?.mistralApiKey && !apiKey;
+
+  // Prevent navigation away if API key is required
+  const handleBack = (e: React.MouseEvent) => {
+    if (isApiKeyRequired) {
+      e.preventDefault();
+      toast({
+        title: 'API-Schlüssel erforderlich',
+        description: 'Bitte geben Sie einen Mistral API-Schlüssel ein, um fortzufahren.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const handleSave = () => {
     const repoData = selectedRepo ? selectedRepo.split('/') : null;
@@ -113,19 +141,42 @@ export default function Settings() {
   return (
     <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">
       <div className="h-12 px-3 flex items-center gap-2 border-b border-border">
-        <Link href="/">
+        {isApiKeyRequired ? (
           <Button 
             variant="ghost" 
             size="icon"
             data-testid="button-back"
+            onClick={handleBack}
+            disabled
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-        </Link>
+        ) : (
+          <Link href="/">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              data-testid="button-back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </Link>
+        )}
         <h1 className="text-body font-bold">Einstellungen</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
+        {isApiKeyRequired && (
+          <Alert variant="destructive" data-testid="alert-api-key-required">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>API-Schlüssel erforderlich</AlertTitle>
+            <AlertDescription>
+              Bitte geben Sie einen Mistral API-Schlüssel ein, um die Anwendung nutzen zu können. 
+              Ohne API-Schlüssel können keine Aufnahmen transkribiert werden.
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <Card className="p-3">
           <div className="space-y-3">
             <div>
@@ -243,7 +294,7 @@ export default function Settings() {
 
         <Button
           onClick={handleSave}
-          disabled={updateSettingsMutation.isPending || settingsLoading}
+          disabled={updateSettingsMutation.isPending || settingsLoading || (isApiKeyRequired && !apiKey)}
           className="w-full h-10"
           data-testid="button-save-settings"
         >
