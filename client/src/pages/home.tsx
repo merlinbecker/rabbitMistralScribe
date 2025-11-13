@@ -5,6 +5,7 @@ import { StatusBar } from '@/components/StatusBar';
 import { RecordingControl } from '@/components/RecordingControl';
 import { RecordingsList } from '@/components/RecordingsList';
 import { useToast } from '@/hooks/use-toast';
+import { useRequireApiKey } from '@/hooks/useRequireApiKey';
 import { Recording } from '@shared/schema';
 import { Settings, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,8 @@ import { queryClient, apiRequest } from '@/lib/queryClient';
 import { indexedDB } from '@/lib/indexedDB';
 
 export default function Home() {
+  // Check if API key is configured and redirect to settings if not
+  useRequireApiKey();
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -480,7 +483,7 @@ export default function Home() {
             toast({
               title: 'Polling beendet',
               description: 'Maximale Anzahl von Abfragen erreicht.',
-              variant: 'warning',
+              variant: 'destructive',
             });
           }
 
