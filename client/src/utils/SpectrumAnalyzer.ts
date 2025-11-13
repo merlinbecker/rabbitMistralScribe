@@ -123,27 +123,9 @@ export function normalizeDataWithCompression(
   currentRMS: number,
   targetRMS: number
 ): Uint8Array {
-  if (currentRMS < 1) return data;
-  
-  const gain = Math.min(1.8, targetRMS / currentRMS); // Limit max gain to 1.8x - much lower
-  const normalized = new Uint8Array(data.length);
-  const compressionThreshold = 120; // Start compressing earlier for softer curve
-  
-  for (let i = 0; i < data.length; i++) {
-    const amplified = data[i] * gain;
-    
-    if (amplified <= compressionThreshold) {
-      // Linear below threshold
-      normalized[i] = Math.min(255, Math.floor(amplified));
-    } else {
-      // Soft compression above threshold using logarithmic curve
-      const excess = amplified - compressionThreshold;
-      const compressed = compressionThreshold + Math.log1p(excess) * 15;
-      normalized[i] = Math.min(255, Math.floor(compressed));
-    }
-  }
-  
-  return normalized;
+  // No gain, no compression - just pass through the data
+  // This gives raw, unmodified amplitude values
+  return data;
 }
 
 /**
@@ -161,12 +143,12 @@ export class SpectrumAnalyzer {
   constructor(config: SpectrumConfig = {}) {
     this.config = {
       numBands: config.numBands ?? 16,
-      minFreq: config.minFreq ?? 80,
-      maxFreq: config.maxFreq ?? 800,
+      minFreq: config.minFreq ?? 20,
+      maxFreq: config.maxFreq ?? 4000,
       targetFPS: config.targetFPS ?? 40,
-      fftSize: config.fftSize ?? 256,
-      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.85,
-      targetRMS: config.targetRMS ?? 30,
+      fftSize: config.fftSize ?? 512,
+      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.5,
+      targetRMS: config.targetRMS ?? 100,
       peakHoldTime: config.peakHoldTime ?? 300,
       peakDecayRate: config.peakDecayRate ?? 0.92,
     };
@@ -244,13 +226,13 @@ export class SpectrumAnalyzer {
     // Calculate RMS for normalization
     const currentRMS = calculateRMS(bandData);
     
-    // Smooth RMS with very strong exponential moving average for calm display
-    this.rmsValue = 0.98 * this.rmsValue + 0.02 * currentRMS;
+    // Light smoothing only
+    this.rmsValue = 0.7 * this.rmsValue + 0.3 * currentRMS;
     
-    // Use smoothed RMS, but prevent it from going too low
-    const effectiveRMS = Math.max(this.rmsValue, 15);
+    // Use smoothed RMS
+    const effectiveRMS = Math.max(this.rmsValue, 5);
 
-    // Normalize data with dynamic compression
+    // Pass through without gain/compression
     const normalizedData = normalizeDataWithCompression(bandData, effectiveRMS, this.config.targetRMS);
 
     // Update peaks

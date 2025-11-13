@@ -22,17 +22,17 @@ export class AudioSpectrumBitmap {
     private audioStream: MediaStream | null,
     private isRecording: boolean
   ) {
-    // Initialize SpectrumAnalyzer with conservative settings for calm visualization
+    // Initialize SpectrumAnalyzer with wider frequency range and no gain
     this.spectrumAnalyzer = new SpectrumAnalyzer({
       numBands: 16,
-      minFreq: 80,      // Lower frequency bound: 80 Hz
-      maxFreq: 800,     // Upper frequency bound: 800 Hz (speech-optimized)
+      minFreq: 20,      // Wider frequency range for better coverage
+      maxFreq: 4000,    // Up to 4kHz for full spectrum
       targetFPS: 40,
-      fftSize: 256,     // Lower FFT for less sensitivity
-      smoothingTimeConstant: 0.85,  // Much more smoothing for calm display
-      targetRMS: 30,    // Very low target to prevent overdriving
-      peakHoldTime: 300,  // Shorter peak hold
-      peakDecayRate: 0.92, // Faster decay
+      fftSize: 512,     // Higher FFT for better resolution
+      smoothingTimeConstant: 0.5,  // Less smoothing for faster response
+      targetRMS: 100,   // Not used anymore (no gain)
+      peakHoldTime: 300,
+      peakDecayRate: 0.92,
     });
   }
   
