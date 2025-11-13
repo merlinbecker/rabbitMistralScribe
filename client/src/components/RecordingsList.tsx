@@ -195,11 +195,9 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
           >
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex-1 min-w-0">
-                {recording.title && (
-                  <h4 className="text-body font-medium mb-1 truncate" data-testid={`title-${recording.id}`}>
-                    {recording.title}
-                  </h4>
-                )}
+                <h4 className="text-body font-medium mb-1 truncate" data-testid={`title-${recording.id}`}>
+                  {recording.title || 'Audio-Notiz'}
+                </h4>
                 <div className="flex items-center gap-2">
                   {recording.audioUrl && (
                     <Button
