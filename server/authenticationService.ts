@@ -207,12 +207,16 @@ export class AuthenticationService {
 
   /**
    * Create session for authenticated user
+   * Invalidates all existing sessions for this user to prevent session conflicts
    * 
    * @param req Express request object
    * @param userId User ID to store in session
    * @returns Promise that resolves when session is saved
    */
   async createSession(req: Request, userId: string): Promise<void> {
+    // Invalidate all existing sessions for this user
+    await this.invalidateUserSessions(userId);
+    
     return new Promise<void>((resolve, reject) => {
       req.session.userId = userId;
       req.session.save((err) => {
@@ -225,6 +229,44 @@ export class AuthenticationService {
         }
       });
     });
+  }
+
+  /**
+   * Invalidate all existing sessions for a user
+   * This prevents session conflicts when a user logs in from multiple OAuth apps
+   * 
+   * @param userId User ID whose sessions should be invalidated
+   */
+  private async invalidateUserSessions(userId: string): Promise<void> {
+    try {
+      // Get SessionStore from the storage's database service
+      const sessionStore = (this.storage as any).db;
+      if (!sessionStore || typeof sessionStore.list !== 'function') {
+        console.warn('[AUTH_SERVICE] Cannot access session store for invalidation');
+        return;
+      }
+
+      // Get all session keys
+      const sessionKeys = await sessionStore.list('session:');
+      console.log(`[AUTH_SERVICE] Checking ${sessionKeys.length} sessions for user ${userId}`);
+
+      let invalidatedCount = 0;
+      for (const key of sessionKeys) {
+        const sessionData = await sessionStore.get(key);
+        if (sessionData && sessionData.userId === userId) {
+          await sessionStore.delete(key);
+          invalidatedCount++;
+          console.log(`[AUTH_SERVICE] Invalidated session: ${key}`);
+        }
+      }
+
+      if (invalidatedCount > 0) {
+        console.log(`[AUTH_SERVICE] Invalidated ${invalidatedCount} existing session(s) for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('[AUTH_SERVICE] Error invalidating user sessions:', error);
+      // Don't throw - continue with session creation even if invalidation fails
+    }
   }
 
   /**
