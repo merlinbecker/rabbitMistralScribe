@@ -38,6 +38,6 @@ radar-beta
 [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=merlinbecker_rabbitMistralScribe&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=merlinbecker_rabbitMistralScribe)
 [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=merlinbecker_rabbitMistralScribe&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=merlinbecker_rabbitMistralScribe)
 
-Generated on: 2025-11-13T13:18:22.758Z
+Generated on: 2025-11-13T14:06:35.880Z
 
 > Fenster: offset=1, count=3. LOC relativ: min=8304 → 5, max=9027 → 1. Labels: dd.mm (deutsch) + kurze LOC (k).
