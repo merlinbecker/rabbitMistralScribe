@@ -1,6 +1,7 @@
 import type { JobQueue } from './jobQueue';
 import type { IStorage } from './storage';
 import type { IMistralService } from './mistralService';
+import type { IGitHubService } from './githubService';
 
 export class TranscriptionWorker {
   private isRunning = false;
@@ -8,11 +9,13 @@ export class TranscriptionWorker {
   private jobQueue: JobQueue;
   private storage: IStorage;
   private mistralService: IMistralService;
+  private githubService: IGitHubService;
 
-  constructor(jobQueue: JobQueue, storage: IStorage, mistralService: IMistralService) {
+  constructor(jobQueue: JobQueue, storage: IStorage, mistralService: IMistralService, githubService: IGitHubService) {
     this.jobQueue = jobQueue;
     this.storage = storage;
     this.mistralService = mistralService;
+    this.githubService = githubService;
   }
 
   start(): void {
@@ -245,7 +248,7 @@ export class TranscriptionWorker {
     // Save to GitHub if configured
     if (settings.githubRepoOwner && settings.githubRepoName) {
       console.log('[WORKER] Saving to GitHub...');
-      await this.saveToGitHub(recordingId, userId);
+      await this.githubService.saveRecordingToGitHub({ recordingId, userId });
     }
 
     // Delete audio file to save database space
@@ -258,67 +261,4 @@ export class TranscriptionWorker {
     console.log('[WORKER] Transcription completed successfully');
   }
 
-  private async saveToGitHub(recordingId: string, userId: string): Promise<void> {
-    const recording = await this.storage.getRecording(recordingId);
-    const user = await this.storage.getUser(userId);
-    const settings = await this.storage.getUserSettings(userId);
-
-    if (!recording || !user || !settings || !user.accessToken) {
-      throw new Error('Missing required data for GitHub save');
-    }
-
-    if (!settings.githubRepoOwner || !settings.githubRepoName) {
-      throw new Error('GitHub repository not configured');
-    }
-
-    const timestamp = recording.createdAt ? new Date(recording.createdAt).toISOString() : new Date().toISOString();
-    const filename = `audio-note-${timestamp.replace(/[:.]/g, '-')}.md`;
-
-    const markdownContent = `---
-title: "${recording.title || 'Audio-Notiz'}"
-date: ${timestamp}
-duration: ${recording.duration || 0}
-summary: |
-  ${(recording.summary || 'Keine Zusammenfassung verfügbar').split('\n').join('\n  ')}
----
-
-# ${recording.title || 'Audio-Notiz'}
-
-## Transkript
-
-${recording.transcript || 'Kein Transkript verfügbar'}
-
----
-
-*Aufnahmedauer: ${recording.duration ? Math.floor(recording.duration / 60) : 0}:${recording.duration ? (recording.duration % 60).toString().padStart(2, '0') : '00'}*
-*Erstellt: ${new Date(timestamp).toLocaleString('de-DE')}*
-`;
-
-    const encodedContent = Buffer.from(markdownContent).toString('base64');
-
-    const createFileResponse = await fetch(
-      `https://api.github.com/repos/${settings.githubRepoOwner}/${settings.githubRepoName}/contents/audio-notes/${filename}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${user.accessToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: `Audio-Notiz vom ${new Date(timestamp).toLocaleString('de-DE')}`,
-          content: encodedContent,
-        }),
-      }
-    );
-
-    if (!createFileResponse.ok) {
-      throw new Error(`GitHub file creation failed: ${createFileResponse.statusText}`);
-    }
-
-    const fileData = await createFileResponse.json();
-    await this.storage.updateRecording(recordingId, {
-      githubFileUrl: fileData.content.html_url,
-    });
-  }
 }
