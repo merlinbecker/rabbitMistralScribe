@@ -149,7 +149,7 @@ export class MistralService implements IMistralService {
     apiKey: string,
   ): Promise<TitleGenerationResult> {
     const systemPrompt =
-      "Fasse mir den Inhalt so kurz wie möglich zusammen, in 1-2 Sätzen. was ist die Kernaussage ? Keine überschrifte, keine Formatierungen, kurz, prägnant und informativ.";
+      "Du bist ein Redakteur, der einen kurzen und knackigen Titel für eine Notiz erstellt.";
 
     const response = await fetch(this.chatUrl, {
       method: "POST",
