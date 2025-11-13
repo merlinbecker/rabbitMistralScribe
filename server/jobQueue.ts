@@ -65,22 +65,37 @@ export class JobQueue {
   // Get next pending job
   async dequeue(): Promise<TranscriptionJob | null> {
     const keys = await this.db.list(this.QUEUE_PREFIX);
-    console.log('[QUEUE] Keys found:', keys);
+    console.log('[JOBQUEUE] 🔍 Searching for pending jobs...');
+    console.log('[JOBQUEUE] Total keys found:', keys.length);
+
+    let pendingCount = 0;
+    let processingCount = 0;
+    let completedCount = 0;
+    let failedCount = 0;
 
     for (const key of keys) {
-      console.log('[QUEUE] Fetching job data for key:', key);
       const job = await this.db.get<TranscriptionJob>(key);
 
       if (!job) {
-        console.log('[QUEUE] No data found for key:', key);
+        console.log('[JOBQUEUE] ⚠️ No data found for key:', key);
         continue;
       }
 
+      // Count job statuses
+      if (job.status === 'pending') pendingCount++;
+      else if (job.status === 'processing') processingCount++;
+      else if (job.status === 'completed') completedCount++;
+      else if (job.status === 'failed') failedCount++;
+
       // Skip jobs that are already processing or completed
-      if (job.status !== 'pending') continue;
+      if (job.status !== 'pending') {
+        console.log(`[JOBQUEUE] Skipping job ${job.id} with status: ${job.status}`);
+        continue;
+      }
 
       // Skip jobs that exceeded max attempts
       if (job.attempts >= this.MAX_ATTEMPTS) {
+        console.log(`[JOBQUEUE] Job ${job.id} exceeded max attempts - marking as failed`);
         await this.markFailed(job.id, 'Max attempts exceeded');
         continue;
       }
@@ -90,9 +105,23 @@ export class JobQueue {
       job.attempts++;
       await this.db.set(key, job);
 
-      console.log('[QUEUE] Job dequeued:', job.id, 'attempt:', job.attempts);
+      console.log('[JOBQUEUE] ✅ Job dequeued:', {
+        id: job.id,
+        recordingId: job.recordingId,
+        attempt: job.attempts,
+        maxAttempts: this.MAX_ATTEMPTS
+      });
+      
       return job;
     }
+
+    console.log('[JOBQUEUE] 📊 Queue summary:', {
+      pending: pendingCount,
+      processing: processingCount,
+      completed: completedCount,
+      failed: failedCount,
+      total: keys.length
+    });
 
     return null;
   }

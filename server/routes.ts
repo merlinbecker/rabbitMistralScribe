@@ -171,17 +171,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await jobQueue.enqueue(recording.id, userId);
         }
         
-        // Notify worker
+        // Only notify worker if we actually queued jobs
+        console.log('[AUTH] 🔔 Notifying worker of newly queued failed recordings');
         transcriptionWorker.notifyNewJob().catch(err => 
           console.error('[AUTH] Failed to notify worker after queueing failed recordings:', err)
         );
       } else {
-        console.log('[AUTH] No failed recordings found to retry');
-        
-        // Still notify worker in case there are pending jobs
-        transcriptionWorker.notifyNewJob().catch(err => 
-          console.error('[AUTH] Failed to notify worker on login:', err)
-        );
+        console.log('[AUTH] No failed recordings found to retry - skipping worker notification');
       }
     } else {
       console.log('[AUTH] ⚠️ No Mistral API key configured - skipping failed recordings retry');

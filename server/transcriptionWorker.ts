@@ -72,7 +72,16 @@ export class TranscriptionWorker {
       return;
     }
 
-    console.log('[WORKER] ✅ Starting queue processing...');
+    // Check if there are any pending jobs before starting
+    const pendingCount = await this.jobQueue.getPendingCount();
+    console.log('[WORKER] 📊 Pending jobs in queue:', pendingCount);
+    
+    if (pendingCount === 0) {
+      console.log('[WORKER] ⏭️ No pending jobs - skipping queue processing');
+      return;
+    }
+
+    console.log('[WORKER] ✅ Starting queue processing for', pendingCount, 'pending job(s)...');
     await this.processQueue();
   }
 
