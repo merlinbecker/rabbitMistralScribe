@@ -45,7 +45,7 @@ export default function Home() {
         id: p.id,
         userId: '', // Not needed for display
         title: p.title || null,
-        audioUrl: URL.createObjectURL(p.audioBlob),
+        audioUrl: p.audioBlob ? URL.createObjectURL(p.audioBlob) : null,
         duration: p.duration,
         status: p.status === 'queued' || p.status === 'failed' ? 'pending' : p.status,
         transcript: p.transcript || null,
