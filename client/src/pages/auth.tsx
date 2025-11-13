@@ -105,7 +105,7 @@ export default function Auth() {
         <div className="space-y-3">
           <Button
             onClick={handleGitHubLogin}
-            className="w-full h-12 text-body"
+            className="w-full h-12 text-body text-black"
             data-testid="button-github-login"
           >
             Mit GitHub anmelden
