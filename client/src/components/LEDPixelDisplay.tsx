@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { SpectrumAnalyzer, SpectrumData } from '../utils/SpectrumAnalyzer';
 
 interface LEDPixelDisplayProps {
   isRecording: boolean;
@@ -6,24 +7,47 @@ interface LEDPixelDisplayProps {
 }
 
 export function LEDPixelDisplay({ isRecording, audioStream }: LEDPixelDisplayProps) {
-  const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array(16).fill(0));
+  const [spectrumData, setSpectrumData] = useState<SpectrumData>({
+    frequencies: new Uint8Array(16).fill(0),
+    peaks: new Uint8Array(16).fill(0),
+    timestamp: 0,
+  });
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>();
+  const spectrumAnalyzerRef = useRef<SpectrumAnalyzer | null>(null);
 
   useEffect(() => {
     if (!audioStream || !isRecording) {
       // Reset to idle state
-      setFrequencyData(new Uint8Array(16).fill(0));
+      setSpectrumData({
+        frequencies: new Uint8Array(16).fill(0),
+        peaks: new Uint8Array(16).fill(0),
+        timestamp: 0,
+      });
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (spectrumAnalyzerRef.current) {
+        spectrumAnalyzerRef.current.reset();
       }
       return;
     }
 
+    // Create audio context and analyzer
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Create spectrum analyzer instance
+    const spectrumAnalyzer = new SpectrumAnalyzer();
+    spectrumAnalyzerRef.current = spectrumAnalyzer;
+    
+    // Initialize with audio context sample rate
+    spectrumAnalyzer.initializeWithContext(audioContext.sampleRate);
+    
+    // Configure Web Audio API analyzer
     const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
+    const analyserConfig = spectrumAnalyzer.getAnalyserConfig();
+    analyser.fftSize = analyserConfig.fftSize;
+    analyser.smoothingTimeConstant = analyserConfig.smoothingTimeConstant;
 
     const source = audioContext.createMediaStreamSource(audioStream);
     source.connect(analyser);
@@ -32,30 +56,26 @@ export function LEDPixelDisplay({ isRecording, audioStream }: LEDPixelDisplayPro
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
-    const updateFrequencyData = () => {
-      if (!analyserRef.current) return;
+    const updateFrequencyData = (timestamp: number) => {
+      if (!analyserRef.current || !spectrumAnalyzerRef.current) return;
 
+      // Check if we should update this frame (FPS limiting)
+      if (!spectrumAnalyzerRef.current.shouldUpdateFrame(timestamp)) {
+        animationFrameRef.current = requestAnimationFrame(updateFrequencyData);
+        return;
+      }
+
+      // Get raw FFT data
       analyser.getByteFrequencyData(dataArray);
       
-      // Average frequency data into 16 columns
-      const columnData = new Uint8Array(16);
-      const binSize = Math.floor(bufferLength / 16);
+      // Process through spectrum analyzer
+      const processedData = spectrumAnalyzerRef.current.processFrequencyData(dataArray, timestamp);
       
-      for (let i = 0; i < 16; i++) {
-        const start = i * binSize;
-        const end = start + binSize;
-        let sum = 0;
-        for (let j = start; j < end; j++) {
-          sum += dataArray[j];
-        }
-        columnData[i] = Math.floor(sum / binSize);
-      }
-      
-      setFrequencyData(columnData);
+      setSpectrumData(processedData);
       animationFrameRef.current = requestAnimationFrame(updateFrequencyData);
     };
 
-    updateFrequencyData();
+    animationFrameRef.current = requestAnimationFrame(updateFrequencyData);
 
     return () => {
       if (animationFrameRef.current) {
@@ -70,19 +90,29 @@ export function LEDPixelDisplay({ isRecording, audioStream }: LEDPixelDisplayPro
   const pixels = [];
   for (let row = 0; row < 16; row++) {
     for (let col = 0; col < 16; col++) {
-      const frequency = frequencyData[col];
+      const frequency = spectrumData.frequencies[col];
+      const peak = spectrumData.peaks[col];
       const threshold = ((15 - row) / 15) * 255;
       
       let color = '#000000'; // inactive
       
-      if (frequency > threshold) {
-        // Determine color based on row position (frequency band)
-        if (row < 5) {
-          color = '#FF4500'; // High frequency - Red
-        } else if (row < 11) {
-          color = '#FFD700'; // Mid frequency - Yellow
+      // Check if this is a peak pixel
+      if (peak > 0) {
+        const peakRow = Math.floor(((255 - peak) / 255) * 15);
+        if (row === peakRow) {
+          color = '#FFFFFF'; // Peak indicator - White
+        }
+      }
+      
+      // If not a peak pixel, check if pixel should be active based on frequency
+      if (color === '#000000' && frequency > threshold) {
+        // Determine color based on column (frequency band), not row!
+        if (col <= 5) {
+          color = '#FF8C00'; // Low frequencies (0-5) - Orange
+        } else if (col <= 10) {
+          color = '#FFD700'; // Mid frequencies (6-10) - Yellow
         } else {
-          color = '#FF8C00'; // Low frequency - Orange
+          color = '#FF4500'; // High frequencies (11-15) - Red
         }
       }
       
