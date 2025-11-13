@@ -144,8 +144,8 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
     }
   };
 
-  const formatDuration = (seconds: number | null) => {
-    if (!seconds) return '--:--';
+  const formatDuration = (seconds: number | null | undefined) => {
+    if (seconds === null || seconds === undefined || seconds === 0) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -214,8 +214,14 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
                       )}
                     </Button>
                   )}
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <span className="text-caption text-muted-foreground">
+                      {formatDuration(recording.duration)}
+                    </span>
+                  </div>
                   <span className="text-caption text-muted-foreground truncate">
-                    {recording.createdAt ? formatDistanceToNow(new Date(recording.createdAt), { 
+                    • {recording.createdAt ? formatDistanceToNow(new Date(recording.createdAt), { 
                       addSuffix: true, 
                       locale: de 
                     }) : 'Unbekannt'}
@@ -240,13 +246,6 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
                 </div>
               </div>
             )}
-            
-            <div className="flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-caption text-muted-foreground">
-                {formatDuration(recording.duration)}
-              </span>
-            </div>
 
             {recording.summary && (
               <p className="text-caption mt-2 line-clamp-2 text-muted-foreground" data-testid={`summary-${recording.id}`}>
