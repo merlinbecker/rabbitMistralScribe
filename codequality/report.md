@@ -8,10 +8,9 @@ title: "Code Quality Metrics"
 ---
 radar-beta
   axis s["Sich"], r["Zuv"], m["Wart"], c["Abd"], d["Dupl"], l["LOC↓"]
-  curve p_12_11_8_1k_LOC_["12.11 (8.1k LOC)"]{5, 3, 5, 1, 5, 5}
-  curve p_12_11_8_1k_LOC_["12.11 (8.1k LOC)"]{5, 3, 5, 1, 5, 5}
-  curve p_12_11_8_1k_LOC_["12.11 (8.1k LOC)"]{5, 3, 5, 1, 5, 5}
-  curve p_Aktuell_8_3k_LOC_["Aktuell (8.3k LOC)"]{5, 3, 5, 1, 5, 1}
+  curve p_11_11_9k_LOC_["11.11 (9k LOC)"]{5, 3, 5, 0, 5, 1}
+  curve p_12_11_8_3k_LOC_["12.11 (8.3k LOC)"]{5, 3, 5, 1, 5, 5}
+  curve p_Aktuell_8_3k_LOC_["Aktuell (8.3k LOC)"]{5, 3, 5, 1, 5, 5}
   max 5
   min 1
 ```
@@ -25,7 +24,7 @@ radar-beta
 | Maintainability Rating | 1.0 | 🟩 |
 | Coverage | 17.2% | 🟥 |
 | Code Duplication | 1.9% | 🟩 |
-| Lines of Code | 8304 | 🟥 |
+| Lines of Code | 8304 | 🟩 |
 
 ## SonarCloud Badges
 
@@ -38,6 +37,6 @@ radar-beta
 [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=merlinbecker_rabbitMistralScribe&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=merlinbecker_rabbitMistralScribe)
 [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=merlinbecker_rabbitMistralScribe&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=merlinbecker_rabbitMistralScribe)
 
-Generated on: 2025-11-12T18:43:44.465Z
+Generated on: 2025-11-13T07:11:06.725Z
 
-> Fenster: offset=1, count=3. LOC relativ: min=8103 → 5, max=8304 → 1. Labels: dd.mm (deutsch) + kurze LOC (k).
+> Fenster: offset=1, count=3. LOC relativ: min=8304 → 5, max=9027 → 1. Labels: dd.mm (deutsch) + kurze LOC (k).
