@@ -1,8 +1,9 @@
+
 /**
  * Color utilities for spectrum visualization
  *
  * Colors represent amplitude (loudness), not frequency:
- * - Rows (vertical): Amplitude determines color (quiet=green, mid=yellow, loud=red)
+ * - Rows (vertical): Amplitude determines color (quiet to loud gradient)
  * - Columns (horizontal): Frequency bands (all same color based on amplitude)
  */
 
@@ -12,23 +13,32 @@ export const SPECTRUM_COLORS = {
 
 /**
  * Get color based on amplitude (row position)
- * Bottom rows (quiet) = Green
- * Middle rows (medium) = Yellow
- * Top rows (loud) = Red
+ * 5-level gradient from quiet to loud:
+ * - Level 1 (quietest): #FFD700 (Gold)
+ * - Level 2: #FFAF00 (Orange-Yellow)
+ * - Level 3: #FF8205 (Orange)
+ * - Level 4: #FA500F (Red-Orange)
+ * - Level 5 (loudest): #E10500 (Red)
  */
 export function getColorForAmplitude(row: number, numRows: number = 16): string {
   // Inverted: row 0 is top (loudest), row 15 is bottom (quietest)
   const normalizedRow = row / (numRows - 1); // 0 (top/loud) to 1 (bottom/quiet)
 
-  if (normalizedRow < 0.33) {
-    // Top third: Red (loudest)
-    return '#FF4500';
-  } else if (normalizedRow < 0.67) {
-    // Middle third: Yellow
-    return '#FFD700';
+  if (normalizedRow < 0.2) {
+    // Top 20%: Loudest - Red
+    return '#E10500';
+  } else if (normalizedRow < 0.4) {
+    // 20-40%: Very loud - Red-Orange
+    return '#FA500F';
+  } else if (normalizedRow < 0.6) {
+    // 40-60%: Medium - Orange
+    return '#FF8205';
+  } else if (normalizedRow < 0.8) {
+    // 60-80%: Quiet - Orange-Yellow
+    return '#FFAF00';
   } else {
-    // Bottom third: Green (quietest)
-    return '#00FF00';
+    // Bottom 20%: Quietest - Gold
+    return '#FFD700';
   }
 }
 
