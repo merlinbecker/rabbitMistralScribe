@@ -84,14 +84,14 @@ export default function Home() {
                   summary: serverRec.summary || localEntry.summary,
                 });
                 
-                // Refresh local recordings query to show updated data
-                await queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
+                // Force immediate refetch to show updated data
+                await queryClient.refetchQueries({ queryKey: ['local-recordings'] });
               }
               
               // If transcription is complete, delete the audio blob to save space
               if (serverRec.status === 'transcribed' && localEntry.audioBlob) {
                 await indexedDB.deleteRecording(localEntry.id);
-                await queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
+                await queryClient.refetchQueries({ queryKey: ['local-recordings'] });
               }
             }
           }
