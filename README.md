@@ -144,6 +144,7 @@ npm start
 - `AuthenticationService`: OAuth und Session-Management
 - `DatabaseService`: Zentrale Abstraktion für Replit DB
 - `MistralService`: Transkription und Zusammenfassung
+- `GitHubService`: GitHub-Repository-Operationen (Refactored)
 - `TranscriptionWorker`: Background-Worker für Job-Processing
 - `JobQueue`: Push-basiertes Queue-System
 
@@ -160,7 +161,7 @@ npm run test:coverage
 npm run test:ui
 ```
 
-**Test-Coverage**: 58+ Unit-Tests für alle kritischen Services
+**Test-Coverage**: 122+ Unit-Tests für alle kritischen Services
 
 ## 📊 API Endpoints
 
