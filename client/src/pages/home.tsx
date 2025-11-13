@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { LEDPixelDisplay } from '@/components/LEDPixelDisplay';
 import { StatusBar } from '@/components/StatusBar';
@@ -30,11 +30,42 @@ export default function Home() {
 
   const { toast } = useToast();
 
-  // Fetch recordings
-  const { data: recordings = [], isLoading, error, refetch: recordingsQueryRefetch } = useQuery<Recording[]>({
+  // Fetch server recordings
+  const { data: serverRecordings = [], isLoading, error, refetch: recordingsQueryRefetch } = useQuery<Recording[]>({
     queryKey: ['/api/recordings'],
     retry: 2,
   });
+
+  // Fetch local recordings from IndexedDB
+  const { data: localRecordings = [] } = useQuery({
+    queryKey: ['local-recordings'],
+    queryFn: async () => {
+      const pending = await indexedDB.getAllRecordings();
+      return pending.map(p => ({
+        id: p.id,
+        userId: '', // Not needed for display
+        title: null,
+        audioUrl: URL.createObjectURL(p.audioBlob),
+        duration: p.duration,
+        status: p.status === 'queued' || p.status === 'failed' ? 'pending' : p.status,
+        transcript: null,
+        summary: null,
+        githubFileUrl: null,
+        createdAt: p.createdAt,
+        updatedAt: p.createdAt,
+      } as Recording));
+    },
+    refetchInterval: 2000, // Refresh every 2 seconds to show local changes
+  });
+
+  // Merge server and local recordings, avoiding duplicates
+  const recordings = React.useMemo(() => {
+    const serverIds = new Set(serverRecordings.map(r => r.id));
+    const uniqueLocalRecordings = localRecordings.filter(
+      local => !serverRecordings.some(server => server.id === local.id)
+    );
+    return [...uniqueLocalRecordings, ...serverRecordings];
+  }, [serverRecordings, localRecordings]);
 
   // Filter recordings based on search and status
   const filteredRecordings = useMemo(() => {
@@ -281,8 +312,8 @@ export default function Home() {
 
       // console.log('[LOCAL_SAVE] Saved to IndexedDB:', localId);
 
-      // Refresh UI immediately to show the pending item
-      await queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+      // Refresh UI immediately to show the pending item from IndexedDB
+      await queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
 
       // If online, try to upload immediately (in background)
       if (navigator.onLine) {
@@ -352,6 +383,7 @@ export default function Home() {
 
       // Refetch recordings list to show the newly uploaded recording
       await queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+      await queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
 
       // Ensure polling is active when a new recording is uploaded
       setIsPollingActive(true);
@@ -401,6 +433,7 @@ export default function Home() {
           });
 
           queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+          queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
 
           // Check if polling should continue for other items
           const remainingPending = recordings.some(r => r.status === 'pending' || r.status === 'transcribing');
