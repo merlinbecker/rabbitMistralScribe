@@ -248,6 +248,13 @@ export class TranscriptionWorker {
       await this.saveToGitHub(recordingId, userId);
     }
 
+    // Delete audio file to save database space
+    console.log('[WORKER] 🗑️ Deleting audio file from database to save space...');
+    await this.storage.updateRecording(recordingId, {
+      audioUrl: undefined,
+    });
+    console.log('[WORKER] ✅ Audio file deleted successfully');
+
     console.log('[WORKER] Transcription completed successfully');
   }
 
