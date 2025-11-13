@@ -102,7 +102,7 @@ export default function Home() {
     if (localRecordings.length > 0 && serverRecordings.length > 0) {
       syncLocalWithServer().catch(console.error);
     }
-  }, [localRecordings, serverRecordings]);
+  }, [localRecordings, serverRecordings, queryClient]);
 
   // Merge server and local recordings, avoiding duplicates
   const recordings = React.useMemo(() => {

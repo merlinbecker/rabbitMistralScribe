@@ -38,7 +38,7 @@ class IndexedDBManager {
     });
   }
 
-  async addRecording(recording: PendingRecording): Promise<void> {
+  async addRecording(recording: LocalRecording): Promise<void> {
     if (!this.db) await this.init();
 
     return new Promise((resolve, reject) => {
@@ -51,7 +51,7 @@ class IndexedDBManager {
     });
   }
 
-  async getAllRecordings(): Promise<PendingRecording[]> {
+  async getAllRecordings(): Promise<LocalRecording[]> {
     if (!this.db) await this.init();
 
     return new Promise((resolve, reject) => {
@@ -64,7 +64,7 @@ class IndexedDBManager {
     });
   }
 
-  async updateRecording(id: string, updates: Partial<PendingRecording>): Promise<void> {
+  async updateRecording(id: string, updates: Partial<LocalRecording>): Promise<void> {
     if (!this.db) await this.init();
 
     return new Promise((resolve, reject) => {
