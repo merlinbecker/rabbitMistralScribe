@@ -129,36 +129,16 @@ export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: R
     });
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case 'transcribed':
-        return (
-          <Badge variant="default" className="text-caption gap-1">
-            <CheckCircle2 className="w-3 h-3" />
-            Transkribiert
-          </Badge>
-        );
+        return <CheckCircle2 className="w-4 h-4 text-green-600" />;
       case 'transcribing':
-        return (
-          <Badge variant="secondary" className="text-caption gap-1">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Verarbeitung
-          </Badge>
-        );
+        return <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />;
       case 'failed':
-        return (
-          <Badge variant="destructive" className="text-caption gap-1">
-            <AlertCircle className="w-3 h-3" />
-            Fehler
-          </Badge>
-        );
+        return <AlertCircle className="w-4 h-4 text-red-600" />;
       default:
-        return (
-          <Badge variant="outline" className="text-caption gap-1">
-            <Clock className="w-3 h-3" />
-            Ausstehend
-          </Badge>
-        );
+        return <Clock className="w-4 h-4 text-muted-foreground" />;
     }
   };
 
@@ -211,47 +191,48 @@ export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: R
         return (
           <Card 
             key={recording.id} 
-            className="p-3"
+            className="p-3 relative"
             data-testid={`recording-item-${recording.id}`}
           >
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex-1 min-w-0">
-                <h4 className="text-body font-medium mb-1 truncate" data-testid={`title-${recording.id}`}>
-                  {recording.title || 'Audio-Notiz'}
-                </h4>
-                <div className="flex items-center gap-2">
-                  {recording.audioUrl && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => togglePlayback(recording)}
-                      data-testid={`button-play-${recording.id}`}
-                      className="flex-shrink-0 h-6 w-6"
-                    >
-                      {isPlaying ? (
-                        <Pause className="w-3 h-3" />
-                      ) : (
-                        <Play className="w-3 h-3" />
-                      )}
-                    </Button>
-                  )}
-                  {recording.audioUrl && (
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                      <span className="text-caption text-muted-foreground">
-                        {formatDuration(recording.duration)}
-                      </span>
-                    </div>
-                  )}
-                  <span className="text-caption text-muted-foreground truncate">
-                    • {recording.createdAt ? formatDistanceToNow(new Date(recording.createdAt), { 
-                      addSuffix: true, 
-                      locale: de 
-                    }) : 'Unbekannt'}
-                  </span>
-                </div>
+            <div className="absolute -top-1.5 -right-1.5 bg-background rounded-full p-1 shadow-sm border border-border">
+              {getStatusIcon(recording.status)}
+            </div>
+            
+            <div className="pr-6">
+              <h4 className="text-body font-medium mb-2 break-words" data-testid={`title-${recording.id}`}>
+                {recording.title || 'Audio-Notiz'}
+              </h4>
+              <div className="flex items-center gap-2 flex-wrap">
+                {recording.audioUrl && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => togglePlayback(recording)}
+                    data-testid={`button-play-${recording.id}`}
+                    className="flex-shrink-0 h-6 w-6"
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-3 h-3" />
+                    ) : (
+                      <Play className="w-3 h-3" />
+                    )}
+                  </Button>
+                )}
+                {recording.audioUrl && (
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <span className="text-caption text-muted-foreground">
+                      {formatDuration(recording.duration)}
+                    </span>
+                  </div>
+                )}
+                <span className="text-caption text-muted-foreground">
+                  • {recording.createdAt ? formatDistanceToNow(new Date(recording.createdAt), { 
+                    addSuffix: true, 
+                    locale: de 
+                  }) : 'Unbekannt'}
+                </span>
               </div>
-              {getStatusBadge(recording.status)}
             </div>
 
             {/* Progress bar only shown during playback */}
