@@ -23,9 +23,10 @@ import { useMutation } from '@tanstack/react-query';
 interface RecordingsListProps {
   recordings: Recording[];
   isLoading?: boolean;
+  showOnlyOne?: boolean;
 }
 
-export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
+export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: RecordingsListProps) {
   const { toast } = useToast();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -187,7 +188,7 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
         <Mic className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
         <p className="text-body text-muted-foreground">Noch keine Aufnahmen</p>
         <p className="text-caption text-muted-foreground mt-1">
-          Drücken Sie die Seitentaste zum Starten
+          {showOnlyOne ? 'Drücken Sie die Seitentaste zum Starten' : 'Keine Aufnahmen gefunden'}
         </p>
       </div>
     );
@@ -196,9 +197,12 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
   return (
     <div className="space-y-2 p-3 pb-20" data-testid="recordings-list">
       <audio ref={audioRef} className="hidden" />
-      <h3 className="text-body font-medium mb-2">Letzte Aufnahmen</h3>
+      {!showOnlyOne && <h3 className="text-body font-medium mb-2">Alle Aufnahmen</h3>}
+      {showOnlyOne && recordings.length > 0 && (
+        <h3 className="text-body font-medium mb-2">Letzte Aufnahme</h3>
+      )}
       
-      {recordings.slice(0, 5).map((recording) => {
+      {(showOnlyOne ? recordings.slice(0, 1) : recordings).map((recording) => {
         const isPlaying = playingId === recording.id;
         const progress = isPlaying && recording.duration 
           ? (currentTime / recording.duration) * 100 

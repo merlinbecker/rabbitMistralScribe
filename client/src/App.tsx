@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Home from "@/pages/home";
 import Settings from "@/pages/settings";
+import Recordings from "@/pages/recordings";
 import Auth from "@/pages/auth";
 import NotFound from "@/pages/not-found";
 import type { User } from "@shared/schema";
@@ -41,6 +42,9 @@ function Router() {
       <Route path="/auth" component={Auth} />
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}
+      </Route>
+      <Route path="/recordings">
+        {() => <ProtectedRoute component={Recordings} />}
       </Route>
       <Route path="/">
         {() => <ProtectedRoute component={Home} />}

@@ -6,10 +6,8 @@ import { RecordingControl } from '@/components/RecordingControl';
 import { RecordingsList } from '@/components/RecordingsList';
 import { useToast } from '@/hooks/use-toast';
 import { Recording } from '@shared/schema';
-import { Settings, Search, X } from 'lucide-react';
+import { Settings, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Link } from 'wouter';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { indexedDB } from '@/lib/indexedDB';
@@ -18,8 +16,6 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isPollingActive, setIsPollingActive] = useState(false); // State to control polling
 
@@ -112,27 +108,6 @@ export default function Home() {
     );
     return [...uniqueLocalRecordings, ...serverRecordings];
   }, [serverRecordings, localRecordings]);
-
-  // Filter recordings based on search and status
-  const filteredRecordings = useMemo(() => {
-    let filtered = recordings;
-
-    // Filter by status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(r => r.status === statusFilter);
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(r =>
-        r.transcript?.toLowerCase().includes(query) ||
-        r.summary?.toLowerCase().includes(query)
-      );
-    }
-
-    return filtered;
-  }, [recordings, searchQuery, statusFilter]);
 
   // Count processing recordings for status display
   const processingCount = recordings.filter(
@@ -556,6 +531,9 @@ export default function Home() {
     }
   };
 
+  // Get only the most recent recording for the home view
+  const latestRecording = recordings.length > 0 ? [recordings[0]] : [];
+
   return (
     <div className="h-screen flex flex-col max-w-[240px] mx-auto">
       <StatusBar isRecording={isRecording} recordingTime={recordingTime} />
@@ -564,60 +542,33 @@ export default function Home() {
         <div className="p-3 space-y-4">
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-status font-bold">Audio Notes</h1>
-            <Link href="/settings">
-              <Button
-                variant="ghost"
-                size="icon"
-                data-testid="button-settings"
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
-            </Link>
+            <div className="flex gap-1">
+              <Link href="/recordings">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-testid="button-recordings"
+                >
+                  <Search className="w-4 h-4" />
+                </Button>
+              </Link>
+              <Link href="/settings">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-testid="button-settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </Link>
+            </div>
           </div>
 
           <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
 
-          {/* Search and Filter Controls */}
-          <div className="space-y-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Notizen durchsuchen..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 pr-8 text-body"
-                data-testid="input-search"
-              />
-              {searchQuery && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-0 top-1/2 transform -translate-y-1/2"
-                  data-testid="button-clear-search"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full" data-testid="select-status-filter">
-                <SelectValue placeholder="Status filtern" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Status</SelectItem>
-                <SelectItem value="pending">Ausstehend</SelectItem>
-                <SelectItem value="transcribing">In Verarbeitung</SelectItem>
-                <SelectItem value="transcribed">Transkribiert</SelectItem>
-                <SelectItem value="failed">Fehler</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Show only the last recording */}
+          <RecordingsList recordings={latestRecording} isLoading={isLoading} showOnlyOne={true} />
         </div>
-
-        <RecordingsList recordings={filteredRecordings} isLoading={isLoading} />
       </div>
 
       <RecordingControl
