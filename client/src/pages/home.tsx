@@ -212,16 +212,19 @@ export default function Home() {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         // console.log('[RECORDING] Audio blob created:', { size: audioBlob.size, type: audioBlob.type });
 
-        // Save to IndexedDB for offline support
-        await saveRecordingLocally(audioBlob, recordingTime);
-
-        // Clean up
+        // Clean up audio stream immediately
         stream.getTracks().forEach(track => track.stop());
         setAudioStream(null);
 
+        // Show immediate feedback
         toast({
           title: 'Aufnahme gespeichert',
           description: 'Die Aufnahme wird verarbeitet...',
+        });
+
+        // Save and upload in background (non-blocking)
+        saveRecordingLocally(audioBlob, recordingTime).catch(error => {
+          console.error('[RECORDING] Background save/upload failed:', error);
         });
 
         // console.log('[RECORDING] Processing complete.');
@@ -278,10 +281,15 @@ export default function Home() {
 
       // console.log('[LOCAL_SAVE] Saved to IndexedDB:', localId);
 
-      // If online, try to upload immediately
+      // Refresh UI immediately to show the pending item
+      await queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+
+      // If online, try to upload immediately (in background)
       if (navigator.onLine) {
         // console.log('[UPLOAD] Network is online - starting upload');
-        await uploadRecording(localId, audioBlob, duration);
+        uploadRecording(localId, audioBlob, duration).catch(error => {
+          console.error('[UPLOAD] Background upload failed:', error);
+        });
       } else {
         // console.log('[UPLOAD] Network is offline - skipping upload');
         toast({
