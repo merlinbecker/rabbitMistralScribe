@@ -41,7 +41,7 @@ export function RecordingControl({ isRecording, onToggleRecording, disabled = fa
         onClick={onToggleRecording}
         disabled={disabled}
         variant={isRecording ? "destructive" : "default"}
-        className="w-full text-body font-medium text-black"
+        className="w-full text-body font-medium"
         style={{ minHeight: '48px' }}
         data-testid={isRecording ? "button-stop-recording" : "button-start-recording"}
       >
