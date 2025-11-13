@@ -9,7 +9,7 @@ interface RecordingControlProps {
 
 export function RecordingControl({ isRecording, onToggleRecording, disabled = false }: RecordingControlProps) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 p-3 bg-background border-t border-border">
+    <div className="fixed bottom-0 left-0 right-0 p-3 bg-black border-t border-border">
       <Button
         onClick={onToggleRecording}
         disabled={disabled}

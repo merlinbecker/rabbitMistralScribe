@@ -12,15 +12,37 @@ import { Button } from '@/components/ui/button';
 import { Link } from 'wouter';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { indexedDB } from '@/lib/indexedDB';
+import { ImageBitmapProvider } from '@/lib/ledBitmap';
+import type { LEDBitmap } from '@/lib/ledBitmap';
 
 export default function Home() {
   // Check if API key is configured and redirect to settings if not
   useRequireApiKey();
+
+  // Load Mistral logo bitmap on mount
+  useEffect(() => {
+    const loadMistralLogo = async () => {
+      try {
+        const provider = new ImageBitmapProvider({
+          imageUrl: '/mistral.png',
+          colorMode: 'full',
+          brightness: 1.0
+        });
+        await provider.load();
+        setMistralBitmap(provider.getBitmap());
+      } catch (error) {
+        console.error('Failed to load Mistral logo:', error);
+      }
+    };
+
+    loadMistralLogo();
+  }, []);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isPollingActive, setIsPollingActive] = useState(false); // State to control polling
+  const [mistralBitmap, setMistralBitmap] = useState<LEDBitmap | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -567,7 +589,13 @@ export default function Home() {
             </div>
           </div>
 
-          <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
+          {isRecording ? (
+            <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
+          ) : mistralBitmap ? (
+            <LEDPixelDisplay bitmap={mistralBitmap} />
+          ) : (
+            <LEDPixelDisplay isRecording={false} audioStream={null} />
+          )}
 
           {/* Show only the last recording */}
           <RecordingsList recordings={latestRecording} isLoading={isLoading} showOnlyOne={true} />

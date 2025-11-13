@@ -30,7 +30,7 @@ export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
 
   return (
     <div 
-      className="h-8 px-3 flex items-center justify-between bg-background/80 backdrop-blur-sm border-b border-border"
+      className="h-8 px-3 flex items-center justify-between bg-black backdrop-blur-sm border-b border-border"
       data-testid="status-bar"
     >
       <div className="flex items-center gap-2">
@@ -47,7 +47,7 @@ export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
           />
         )}
       </div>
-      
+
       <div className="flex items-center gap-1.5" data-testid="connection-status">
         {isOnline ? (
           <>
