@@ -1,5 +1,7 @@
-import { Wifi, WifiOff, Circle } from 'lucide-react';
+import { Wifi, WifiOff, Circle, CheckCircle2, XCircle, AlertCircle, Info } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useStatusNotification } from '@/hooks/use-status-notification';
+import type { NotificationType } from '@/hooks/use-status-notification';
 
 interface StatusBarProps {
   isRecording: boolean;
@@ -8,6 +10,7 @@ interface StatusBarProps {
 
 export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const { current: currentNotification } = useStatusNotification();
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -21,6 +24,19 @@ export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  const getNotificationIcon = (type: NotificationType) => {
+    switch (type) {
+      case 'success':
+        return <CheckCircle2 className="w-4 h-4 text-green-600" />;
+      case 'error':
+        return <XCircle className="w-4 h-4 text-red-600" />;
+      case 'warning':
+        return <AlertCircle className="w-4 h-4 text-yellow-600" />;
+      case 'info':
+        return <Info className="w-4 h-4 text-blue-600" />;
+    }
+  };
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -49,7 +65,18 @@ export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
       </div>
 
       <div className="flex items-center gap-1.5" data-testid="connection-status">
-        {isOnline ? (
+        {currentNotification ? (
+          <>
+            {getNotificationIcon(currentNotification.type)}
+            <span 
+              className="text-caption text-muted-foreground truncate max-w-[120px]" 
+              title={currentNotification.description || currentNotification.title}
+              data-testid="status-notification"
+            >
+              {currentNotification.title}
+            </span>
+          </>
+        ) : isOnline ? (
           <>
             <Wifi className="w-4 h-4 text-status-online" />
             <span className="text-caption text-muted-foreground">Online</span>

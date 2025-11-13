@@ -4,7 +4,7 @@ import { LEDPixelDisplay } from '@/components/LEDPixelDisplay';
 import { StatusBar } from '@/components/StatusBar';
 import { RecordingControl } from '@/components/RecordingControl';
 import { RecordingsList } from '@/components/RecordingsList';
-import { useToast } from '@/hooks/use-toast';
+import { useStatusNotification } from '@/hooks/use-status-notification';
 import { useRequireApiKey } from '@/hooks/useRequireApiKey';
 import { Recording } from '@shared/schema';
 import { Settings, Search } from 'lucide-react';
@@ -49,7 +49,7 @@ export default function Home() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref for the polling interval
 
-  const { toast } = useToast();
+  const { notify } = useStatusNotification();
 
   // Fetch server recordings
   const { data: serverRecordings = [], isLoading, error, refetch: recordingsQueryRefetch } = useQuery<Recording[]>({
@@ -298,9 +298,10 @@ export default function Home() {
         setAudioStream(null);
 
         // Show immediate feedback
-        toast({
+        notify({
           title: 'Aufnahme gespeichert',
           description: 'Die Aufnahme wird verarbeitet...',
+          type: 'success',
         });
 
         // Save and upload in background (non-blocking)
@@ -315,16 +316,17 @@ export default function Home() {
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
 
-      toast({
+      notify({
         title: 'Aufnahme gestartet',
         description: 'Sprechen Sie jetzt...',
+        type: 'info',
       });
     } catch (error) {
       console.error('Error starting recording:', error);
-      toast({
+      notify({
         title: 'Fehler',
         description: 'Mikrofonzugriff fehlgeschlagen',
-        variant: 'destructive',
+        type: 'error',
       });
     }
   };
@@ -373,17 +375,18 @@ export default function Home() {
         });
       } else {
         // console.log('[UPLOAD] Network is offline - skipping upload');
-        toast({
+        notify({
           title: 'Aufnahme gespeichert',
           description: 'Wird hochgeladen, sobald Verbindung besteht.',
+          type: 'warning',
         });
       }
     } catch (error) {
       console.error('[LOCAL_SAVE] Error saving recording:', error);
-      toast({
+      notify({
         title: 'Speicherfehler',
         description: error instanceof Error ? error.message : 'Unbekannter Fehler',
-        variant: 'destructive',
+        type: 'error',
       });
     }
   };
@@ -426,9 +429,10 @@ export default function Home() {
         serverRecordingId: recording.id
       });
 
-      toast({
+      notify({
         title: 'Aufnahme hochgeladen',
         description: 'Die Transkription läuft im Hintergrund...',
+        type: 'success',
       });
 
       // Refetch recordings list to show the newly uploaded recording
@@ -440,10 +444,10 @@ export default function Home() {
     } catch (error) {
       console.error('[UPLOAD] Error uploading recording:', error);
       await indexedDB.updateRecording(localId, { status: 'failed' });
-      toast({
+      notify({
         title: 'Upload fehlgeschlagen',
         description: 'Aufnahme bleibt lokal gespeichert.',
-        variant: 'destructive',
+        type: 'error',
       });
     }
   };
@@ -477,9 +481,10 @@ export default function Home() {
           await indexedDB.deleteRecording(localId);
           console.log(`[POLL] Deleted local recording ${localId} from IndexedDB.`);
 
-          toast({
+          notify({
             title: 'Erfolgreich transkribiert',
             description: 'Die Notiz wurde transkribiert und in GitHub gespeichert.',
+            type: 'success',
           });
 
           queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
@@ -496,16 +501,16 @@ export default function Home() {
           clearInterval(pollInterval);
 
           if (updated.status === 'failed') {
-            toast({
+            notify({
               title: 'Transkription fehlgeschlagen',
               description: 'Bitte prüfen Sie Ihren Mistral API-Schlüssel in den Einstellungen.',
-              variant: 'destructive',
+              type: 'error',
             });
           } else {
-            toast({
+            notify({
               title: 'Polling beendet',
               description: 'Maximale Anzahl von Abfragen erreicht.',
-              variant: 'destructive',
+              type: 'warning',
             });
           }
 
