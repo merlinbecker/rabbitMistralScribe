@@ -224,10 +224,10 @@ export default function Settings() {
               </p>
               <Textarea
                 id="summary-template"
-                placeholder="Erstelle eine strukturierte Zusammenfassung mit:\n- Hauptpunkte\n- Aktionselemente\n- Wichtige Erkenntnisse"
+                placeholder="Standard: Du bist ein Assistent, der Audio-Notizen zusammenfasst. Erstelle eine strukturierte Zusammenfassung im Markdown-Format mit Hauptpunkten und wichtigen Details."
                 value={summaryTemplate}
                 onChange={(e) => setSummaryTemplate(e.target.value)}
-                className="text-body min-h-[80px] resize-none"
+                className="text-body min-h-[120px] resize-none"
                 data-testid="textarea-summary-template"
               />
             </div>
