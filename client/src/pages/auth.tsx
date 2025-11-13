@@ -1,22 +1,60 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
-import { SiGithub } from 'react-icons/si';
-import { Mic } from 'lucide-react';
+import { LEDPixelDisplay } from '@/components/LEDPixelDisplay';
+import { ImageBitmapProvider } from '@/lib/ledBitmap';
+import type { LEDBitmap } from '@/lib/ledBitmap';
 import { setStoredToken } from '@/lib/queryClient';
 
 export default function Auth() {
   const [, setLocation] = useLocation();
-  // Assume setError and checkAuthStatus are defined elsewhere or passed as props
-  // For this example, we'll mock them to avoid errors. In a real app, they'd be imported or defined.
+  const [githubBitmap, setGithubBitmap] = useState<LEDBitmap | null>(null);
+  
   const setError = (message: string) => console.error(message);
   const checkAuthStatus = () => {
     console.log("Checking auth status...");
-    // Placeholder for actual auth status check logic
-    // In a real scenario, this would likely involve fetching user data
-    // and setting the user state, then redirecting.
     setLocation('/');
   };
+
+  // Load GitHub logo bitmap on mount
+  useEffect(() => {
+    const loadGithubLogo = async () => {
+      try {
+        // Create a simple GitHub icon pattern (16x16)
+        const githubPattern = [
+          '0000011111100000',
+          '0001111111111000',
+          '0011111111111100',
+          '0111111111111110',
+          '1111110110111111',
+          '1111110110111111',
+          '1111111111111111',
+          '1111111111111111',
+          '1111111111111111',
+          '0111111111111110',
+          '0111111001111110',
+          '0011110000111100',
+          '0011100000011100',
+          '0001100000001000',
+          '0001000000001000',
+          '0000000000000000'
+        ];
+
+        const bitmap: LEDBitmap = githubPattern.map(row => 
+          row.split('').map(char => ({
+            color: char === '1' ? '#FFFFFF' : '#000000',
+            brightness: char === '1' ? 1.0 : 0
+          }))
+        );
+
+        setGithubBitmap(bitmap);
+      } catch (error) {
+        console.error('Failed to create GitHub logo:', error);
+      }
+    };
+
+    loadGithubLogo();
+  }, []);
 
 
   useEffect(() => {
@@ -60,23 +98,16 @@ export default function Auth() {
   return (
     <div className="h-screen flex flex-col items-center justify-center bg-background max-w-[240px] mx-auto p-6">
       <div className="space-y-6 w-full text-center">
-        <div className="space-y-2">
-          <div className="w-16 h-16 mx-auto bg-primary rounded-lg flex items-center justify-center mb-4">
-            <Mic className="w-8 h-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-status font-bold">Audio Notes</h1>
-          <p className="text-body text-muted-foreground">
-            Aufnehmen, transkribieren und in GitHub speichern
-          </p>
-        </div>
+        {githubBitmap && (
+          <LEDPixelDisplay bitmap={githubBitmap} />
+        )}
 
-        <div className="space-y-3 pt-4">
+        <div className="space-y-3">
           <Button
             onClick={handleGitHubLogin}
-            className="w-full h-12 text-body gap-2"
+            className="w-full h-12 text-body"
             data-testid="button-github-login"
           >
-            <SiGithub className="w-5 h-5" />
             Mit GitHub anmelden
           </Button>
 

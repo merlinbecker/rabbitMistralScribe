@@ -565,28 +565,25 @@ export default function Home() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-3 space-y-4">
-          <div className="flex items-center justify-between mb-2">
-            <h1 className="text-status font-bold">Audio Notes</h1>
-            <div className="flex gap-1">
-              <Link href="/recordings">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-testid="button-recordings"
-                >
-                  <Search className="w-4 h-4" />
-                </Button>
-              </Link>
-              <Link href="/settings">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-testid="button-settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
-              </Link>
-            </div>
+          <div className="flex items-center justify-end gap-1 mb-2">
+            <Link href="/recordings">
+              <Button
+                variant="ghost"
+                size="icon"
+                data-testid="button-recordings"
+              >
+                <Search className="w-4 h-4" />
+              </Button>
+            </Link>
+            <Link href="/settings">
+              <Button
+                variant="ghost"
+                size="icon"
+                data-testid="button-settings"
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            </Link>
           </div>
 
           {isRecording ? (
