@@ -7,6 +7,9 @@ export interface LocalRecording {
   status: 'queued' | 'uploading' | 'uploaded' | 'failed';
   createdAt: Date;
   serverRecordingId?: string;
+  title?: string;
+  transcript?: string;
+  summary?: string;
 }
 
 const DB_NAME = 'audio-notes-db';

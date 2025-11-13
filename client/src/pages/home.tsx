@@ -44,12 +44,12 @@ export default function Home() {
       return pending.map(p => ({
         id: p.id,
         userId: '', // Not needed for display
-        title: null,
+        title: p.title || null,
         audioUrl: URL.createObjectURL(p.audioBlob),
         duration: p.duration,
         status: p.status === 'queued' || p.status === 'failed' ? 'pending' : p.status,
-        transcript: null,
-        summary: null,
+        transcript: p.transcript || null,
+        summary: p.summary || null,
         githubFileUrl: null,
         createdAt: p.createdAt,
         updatedAt: p.createdAt,
@@ -57,6 +57,52 @@ export default function Home() {
     },
     refetchInterval: 2000, // Refresh every 2 seconds to show local changes
   });
+
+  // Sync local recordings with server data to enrich them
+  useEffect(() => {
+    const syncLocalWithServer = async () => {
+      for (const localRec of localRecordings) {
+        if (localRec.id) {
+          // Find matching server recording by serverRecordingId
+          const allLocalRecordings = await indexedDB.getAllRecordings();
+          const localEntry = allLocalRecordings.find(r => r.id === localRec.id);
+          
+          if (localEntry?.serverRecordingId) {
+            const serverRec = serverRecordings.find(s => s.id === localEntry.serverRecordingId);
+            
+            // If server has title/transcript/summary that local doesn't have, update local
+            if (serverRec && (serverRec.title || serverRec.transcript || serverRec.summary)) {
+              const needsUpdate = 
+                (serverRec.title && !localEntry.title) ||
+                (serverRec.transcript && !localEntry.transcript) ||
+                (serverRec.summary && !localEntry.summary);
+              
+              if (needsUpdate) {
+                await indexedDB.updateRecording(localEntry.id, {
+                  title: serverRec.title || localEntry.title,
+                  transcript: serverRec.transcript || localEntry.transcript,
+                  summary: serverRec.summary || localEntry.summary,
+                });
+                
+                // Refresh local recordings query to show updated data
+                await queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
+              }
+              
+              // If transcription is complete, delete the audio blob to save space
+              if (serverRec.status === 'transcribed' && localEntry.audioBlob) {
+                await indexedDB.deleteRecording(localEntry.id);
+                await queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
+              }
+            }
+          }
+        }
+      }
+    };
+    
+    if (localRecordings.length > 0 && serverRecordings.length > 0) {
+      syncLocalWithServer().catch(console.error);
+    }
+  }, [localRecordings, serverRecordings]);
 
   // Merge server and local recordings, avoiding duplicates
   const recordings = React.useMemo(() => {
