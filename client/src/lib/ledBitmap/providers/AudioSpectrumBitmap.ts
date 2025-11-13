@@ -1,23 +1,43 @@
+
 /**
  * AudioSpectrumBitmap - Provides audio frequency visualization
+ * Uses SpectrumAnalyzer for optimized speech-frequency analysis
  */
 
 import type { LEDBitmap } from '../types';
+import { SpectrumAnalyzer } from '../../../utils/SpectrumAnalyzer';
+import { getPixelColor } from '../../../utils/spectrumColors';
 
 export class AudioSpectrumBitmap {
   private analyser: AnalyserNode | null = null;
   private audioContext: AudioContext | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
-  private frequencyData: Uint8Array = new Uint8Array(16).fill(0);
+  private spectrumAnalyzer: SpectrumAnalyzer;
   private isActive: boolean = false;
+  private animationFrameId: number | null = null;
+  private currentFrequencies: Uint8Array = new Uint8Array(16).fill(0);
+  private currentPeaks: Uint8Array = new Uint8Array(16).fill(0);
   
   constructor(
     private audioStream: MediaStream | null,
     private isRecording: boolean
-  ) {}
+  ) {
+    // Initialize SpectrumAnalyzer with speech-optimized settings
+    this.spectrumAnalyzer = new SpectrumAnalyzer({
+      numBands: 16,
+      minFreq: 80,      // Speech-relevant: 80 Hz
+      maxFreq: 8000,    // Speech-relevant: 8000 Hz
+      targetFPS: 40,
+      fftSize: 256,
+      smoothingTimeConstant: 0.6,
+      targetRMS: 100,
+      peakHoldTime: 500,
+      peakDecayRate: 0.95,
+    });
+  }
   
   /**
-   * Start audio analysis
+   * Start audio analysis with animation loop
    */
   start(): void {
     if (!this.audioStream || !this.isRecording || this.isActive) {
@@ -27,13 +47,20 @@ export class AudioSpectrumBitmap {
     try {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 256;
-      this.analyser.smoothingTimeConstant = 0.8;
+      
+      // Configure analyser with SpectrumAnalyzer settings
+      const config = this.spectrumAnalyzer.getAnalyserConfig();
+      this.analyser.fftSize = config.fftSize;
+      this.analyser.smoothingTimeConstant = config.smoothingTimeConstant;
+      
+      // Initialize SpectrumAnalyzer with audio context sample rate
+      this.spectrumAnalyzer.initializeWithContext(this.audioContext.sampleRate);
       
       this.source = this.audioContext.createMediaStreamSource(this.audioStream);
       this.source.connect(this.analyser);
       
       this.isActive = true;
+      this.startAnalysisLoop();
     } catch (error) {
       console.error('Failed to start audio analysis:', error);
       this.stop();
@@ -41,10 +68,42 @@ export class AudioSpectrumBitmap {
   }
   
   /**
+   * Animation loop for continuous frequency analysis
+   */
+  private startAnalysisLoop(): void {
+    const updateFrame = (timestamp: number) => {
+      if (!this.isActive) return;
+      
+      // Check if we should update this frame (FPS limiting)
+      if (this.analyser && this.spectrumAnalyzer.shouldUpdateFrame(timestamp)) {
+        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+        this.analyser.getByteFrequencyData(dataArray);
+        
+        // Process with SpectrumAnalyzer
+        const result = this.spectrumAnalyzer.processFrequencyData(dataArray, timestamp);
+        
+        // Store current data
+        this.currentFrequencies = result.frequencies;
+        this.currentPeaks = result.peaks;
+      }
+      
+      this.animationFrameId = requestAnimationFrame(updateFrame);
+    };
+    
+    this.animationFrameId = requestAnimationFrame(updateFrame);
+  }
+  
+  /**
    * Stop audio analysis and cleanup
    */
   stop(): void {
     if (!this.isActive) return;
+    
+    // Cancel animation frame
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
     
     if (this.source) {
       this.source.disconnect();
@@ -57,66 +116,29 @@ export class AudioSpectrumBitmap {
     }
     
     this.analyser = null;
-    this.frequencyData = new Uint8Array(16).fill(0);
+    this.spectrumAnalyzer.reset();
+    this.currentFrequencies = new Uint8Array(16).fill(0);
+    this.currentPeaks = new Uint8Array(16).fill(0);
     this.isActive = false;
   }
   
   /**
-   * Update frequency data from analyser
-   */
-  private updateFrequencyData(): void {
-    if (!this.analyser || !this.isActive) {
-      this.frequencyData = new Uint8Array(16).fill(0);
-      return;
-    }
-    
-    const bufferLength = this.analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    this.analyser.getByteFrequencyData(dataArray);
-    
-    // Average frequency data into 16 columns
-    const columnData = new Uint8Array(16);
-    const binSize = Math.floor(bufferLength / 16);
-    
-    for (let i = 0; i < 16; i++) {
-      const start = i * binSize;
-      const end = start + binSize;
-      let sum = 0;
-      for (let j = start; j < end; j++) {
-        sum += dataArray[j];
-      }
-      columnData[i] = Math.floor(sum / binSize);
-    }
-    
-    this.frequencyData = columnData;
-  }
-  
-  /**
    * Get current bitmap representation
+   * Uses correct frequency-to-color mapping (columns = frequency bands)
    */
   getBitmap(): LEDBitmap {
-    // Update frequency data
-    this.updateFrequencyData();
-    
     const bitmap: LEDBitmap = [];
+    const numRows = 16;
+    const numCols = 16;
     
-    for (let row = 0; row < 16; row++) {
+    for (let row = 0; row < numRows; row++) {
       bitmap[row] = [];
-      for (let col = 0; col < 16; col++) {
-        const frequency = this.frequencyData[col];
-        const threshold = ((15 - row) / 15) * 255;
+      for (let col = 0; col < numCols; col++) {
+        const frequency = this.currentFrequencies[col];
+        const peak = this.currentPeaks[col];
         
-        let color = '#000000';
-        if (frequency > threshold) {
-          // Determine color based on row position (frequency band)
-          if (row < 5) {
-            color = '#FF4500'; // High frequency - Red
-          } else if (row < 11) {
-            color = '#FFD700'; // Mid frequency - Yellow
-          } else {
-            color = '#FF8C00'; // Low frequency - Orange
-          }
-        }
+        // Use spectrumColors utility for correct color mapping
+        const color = getPixelColor(frequency, peak, row, col, numRows, numCols);
         
         bitmap[row][col] = { color };
       }
@@ -130,5 +152,12 @@ export class AudioSpectrumBitmap {
    */
   isRunning(): boolean {
     return this.isActive;
+  }
+  
+  /**
+   * Get frequency bands information for debugging
+   */
+  getFrequencyBands() {
+    return this.spectrumAnalyzer.getFrequencyBands();
   }
 }
