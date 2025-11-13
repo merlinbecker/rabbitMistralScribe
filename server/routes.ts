@@ -36,7 +36,7 @@ declare module 'express-session' {
 // Auth middleware using AuthenticationService
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const user = await authService.authenticateRequest(req);
-  
+
   if (!user) {
     console.log('[AUTH] Authentication failed - sessionID:', req.sessionID);
     return res.status(401).json({
@@ -54,6 +54,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   transcriptionWorker.start();
   console.log('[SERVER] 🚀 Background transcription worker started');
 
+  // Trust proxy - wichtig für Replit Deployments (HTTPS Proxy)
+  app.set('trust proxy', 1);
+
   // Serve service worker with correct MIME type
   app.get('/service-worker.js', (req, res) => {
     res.setHeader('Content-Type', 'application/javascript');
@@ -70,8 +73,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax', // 'lax' works better for same-site OAuth redirects
+        secure: true, // Jetzt sicher, da wir proxy vertrauen
+        sameSite: 'lax',
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       },
     })
@@ -111,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         await authService.createSession(req, result.user.id);
-        
+
         console.log('[AUTH] ========================================');
         console.log('[AUTH] Session created successfully');
         console.log('[AUTH] SessionID:', req.sessionID);
@@ -124,7 +127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           path: req.session.cookie.path
         });
         console.log('[AUTH] ========================================');
-        
+
         // Wait for session to be saved before redirecting
         await new Promise<void>((resolve, reject) => {
           req.session.save((err) => {
@@ -137,7 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
         });
-        
+
         res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] Session creation failed:', sessionError);
@@ -185,23 +188,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const userSettings = await storage.getUserSettings(userId);
     if (userSettings?.mistralApiKey) {
       console.log('[AUTH] ✅ Mistral API key found - checking for failed recordings to retry');
-      
+
       const recordings = await storage.getRecordingsByUserId(userId);
       const failedRecordings = recordings.filter(r => r.status === 'failed');
-      
+
       if (failedRecordings.length > 0) {
         console.log(`[AUTH] 🔄 Found ${failedRecordings.length} failed recording(s) - queueing for retry`);
-        
+
         for (const recording of failedRecordings) {
           console.log(`[AUTH] Queueing failed recording: ${recording.id}`);
-          
+
           // Reset status to pending
           await storage.updateRecording(recording.id, { status: 'pending' });
-          
+
           // Add to job queue
           await jobQueue.enqueue(recording.id, userId);
         }
-        
+
         // Only notify worker if we actually queued jobs
         console.log('[AUTH] 🔔 Notifying worker of newly queued failed recordings');
         transcriptionWorker.notifyNewJob().catch(err => 
@@ -508,10 +511,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Check database connection
       await databaseService.get('health-check');
-      
+
       // Check worker status
       const workerStatus = transcriptionWorker.getStatus();
-      
+
       res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -536,19 +539,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Graceful shutdown handling
   const gracefulShutdown = (signal: string) => {
     console.log(`\n[SERVER] ${signal} received. Starting graceful shutdown...`);
-    
+
     // Stop accepting new connections
     httpServer.close(() => {
       console.log('[SERVER] HTTP server closed');
-      
+
       // Stop the transcription worker
       transcriptionWorker.stop();
       console.log('[SERVER] Transcription worker stopped');
-      
+
       console.log('[SERVER] Graceful shutdown complete');
       process.exit(0);
     });
-    
+
     // Force shutdown after 10 seconds
     setTimeout(() => {
       console.error('[SERVER] Could not close connections in time, forcefully shutting down');
