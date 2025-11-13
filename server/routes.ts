@@ -10,13 +10,15 @@ import { z } from "zod";
 import { JobQueue } from "./jobQueue";
 import { TranscriptionWorker } from "./transcriptionWorker";
 import { MistralService } from "./mistralService";
+import { GitHubService } from "./githubService";
 
 // Create singleton instances with dependency injection
 // AuthenticationService handles all OAuth operations
 const authService = new AuthenticationService(storage);
 const mistralService = new MistralService();
+const githubService = new GitHubService(storage);
 const jobQueue = new JobQueue(databaseService);
-const transcriptionWorker = new TranscriptionWorker(jobQueue, storage, mistralService);
+const transcriptionWorker = new TranscriptionWorker(jobQueue, storage, mistralService, githubService);
 
 // Multer setup for file uploads
 const upload = multer({
@@ -242,19 +244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GitHub repositories route
   app.get('/api/github/repos', requireAuth, async (req, res) => {
     try {
-      const user = await storage.getUser(req.session.userId!);
-      if (!user || !user.accessToken) {
-        return res.status(401).json({ error: 'GitHub access token not found' });
-      }
-
-      const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
-        headers: {
-          'Authorization': `Bearer ${user.accessToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
-      });
-
-      const repos = await response.json();
+      const repos = await githubService.fetchRepositories(req.session.userId!);
       res.json(repos);
     } catch (error) {
       console.error('Failed to fetch GitHub repos:', error);
@@ -472,7 +462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Save to GitHub if configured
       if (settings.githubRepoOwner && settings.githubRepoName) {
-        await saveToGitHub(id, req.session.userId!);
+        await githubService.saveRecordingToGitHub({ recordingId: id, userId: req.session.userId! });
       }
 
       const updatedRecording = await storage.getRecording(id);
@@ -484,74 +474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Helper function to save to GitHub
-  async function saveToGitHub(recordingId: string, userId: string) {
-    const recording = await storage.getRecording(recordingId);
-    const user = await storage.getUser(userId);
-    const settings = await storage.getUserSettings(userId);
 
-    if (!recording || !user || !settings || !user.accessToken) {
-      throw new Error('Missing required data for GitHub save');
-    }
-
-    if (!settings.githubRepoOwner || !settings.githubRepoName) {
-      throw new Error('GitHub repository not configured');
-    }
-
-    // Create markdown content with frontmatter
-    const timestamp = recording.createdAt ? new Date(recording.createdAt).toISOString() : new Date().toISOString();
-    const filename = `audio-note-${timestamp.replace(/[:.]/g, '-')}.md`;
-
-    const markdownContent = `---
-title: "${recording.title || 'Audio-Notiz'}"
-date: ${timestamp}
-duration: ${recording.duration || 0}
-summary: |
-  ${(recording.summary || 'Keine Zusammenfassung verfügbar').split('\n').join('\n  ')}
----
-
-# ${recording.title || 'Audio-Notiz'}
-
-## Transkript
-
-${recording.transcript || 'Kein Transkript verfügbar'}
-
----
-
-*Aufnahmedauer: ${recording.duration ? Math.floor(recording.duration / 60) : 0}:${recording.duration ? (recording.duration % 60).toString().padStart(2, '0') : '00'}*
-*Erstellt: ${new Date(timestamp).toLocaleString('de-DE')}*
-`;
-
-    const encodedContent = Buffer.from(markdownContent).toString('base64');
-
-    // Create file in GitHub repo
-    const createFileResponse = await fetch(
-      `https://api.github.com/repos/${settings.githubRepoOwner}/${settings.githubRepoName}/contents/audio-notes/${filename}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${user.accessToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: `Audio-Notiz vom ${new Date(timestamp).toLocaleString('de-DE')}`,
-          content: encodedContent,
-        }),
-      }
-    );
-
-    if (!createFileResponse.ok) {
-      throw new Error(`GitHub file creation failed: ${createFileResponse.statusText}`);
-    }
-
-    const fileData = await createFileResponse.json();
-
-    // Update recording with GitHub URL
-    await storage.updateRecording(recordingId, {
-      githubFileUrl: fileData.content.html_url,
-    });
-  }
 
   // Health check endpoint for production monitoring
   app.get('/health', async (req, res) => {
