@@ -27,7 +27,7 @@ export class AudioSpectrumBitmap {
       numBands: 16,
       minFreq: 50,      // Lower speech frequencies
       maxFreq: 1000,    // Extended range to 1kHz
-      targetFPS: 12,    // Lower framerate for performance
+      targetFPS: 24,    // Increased framerate for smoother visualization
       fftSize: 1024,    // Higher FFT for better frequency differentiation
       smoothingTimeConstant: 0.3,  // Less smoothing for sharper response
       targetRMS: 100,
