@@ -72,7 +72,7 @@ export default function Home() {
 
             // If server has title/transcript/summary that local doesn't have, update local
             if (serverRec && (serverRec.title || serverRec.transcript || serverRec.summary)) {
-              const needsUpdate = 
+              const needsUpdate =
                 (serverRec.title && !localEntry.title) ||
                 (serverRec.transcript && !localEntry.transcript) ||
                 (serverRec.summary && !localEntry.summary);
