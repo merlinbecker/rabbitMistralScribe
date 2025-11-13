@@ -435,21 +435,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transcriptionResult = await mistralService.transcribeAudio(audioBuffer, settings.mistralApiKey);
       const transcript = transcriptionResult.text;
 
-      // Use MistralService for summarization
-      const summaryResult = await mistralService.summarizeText(
-        transcript,
-        settings.mistralApiKey,
-        settings.summaryTemplate || undefined
-      );
-      const summary = summaryResult.summary;
-
-      // Use MistralService for title generation
+      // Use MistralService for combined summary and title generation
       let title = 'Audio-Notiz';
+      let summary = '';
       try {
-        const titleResult = await mistralService.generateTitle(transcript, settings.mistralApiKey);
-        title = titleResult.title;
+        const result = await mistralService.generateSummaryAndTitle(
+          transcript,
+          settings.mistralApiKey,
+          settings.summaryTemplate || undefined
+        );
+        title = result.title;
+        summary = result.summary;
       } catch (error) {
-        console.warn('Title generation failed, using default:', error);
+        console.warn('Summary and title generation failed, using defaults:', error);
       }
 
       // Update recording with transcript and summary

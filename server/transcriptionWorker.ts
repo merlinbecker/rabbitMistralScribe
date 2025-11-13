@@ -218,23 +218,20 @@ export class TranscriptionWorker {
     const transcriptionResult = await this.mistralService.transcribeAudio(audioBuffer, settings.mistralApiKey);
     const transcript = transcriptionResult.text;
 
-    // Use MistralService for summarization
-    console.log('[WORKER] Generating summary...');
-    const summaryResult = await this.mistralService.summarizeText(
-      transcript,
-      settings.mistralApiKey,
-      settings.summaryTemplate || undefined
-    );
-    const summary = summaryResult.summary;
-
-    // Use MistralService for title generation
-    console.log('[WORKER] Generating title...');
+    // Use MistralService for combined summary and title generation
+    console.log('[WORKER] Generating summary and title...');
     let title = 'Audio-Notiz';
+    let summary = '';
     try {
-      const titleResult = await this.mistralService.generateTitle(transcript, settings.mistralApiKey);
-      title = titleResult.title;
+      const result = await this.mistralService.generateSummaryAndTitle(
+        transcript,
+        settings.mistralApiKey,
+        settings.summaryTemplate || undefined
+      );
+      title = result.title;
+      summary = result.summary;
     } catch (error) {
-      console.warn('[WORKER] Title generation failed, using default:', error);
+      console.warn('[WORKER] Summary and title generation failed, using defaults:', error);
     }
 
     // Update recording

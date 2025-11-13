@@ -18,6 +18,11 @@ export interface TitleGenerationResult {
   title: string;
 }
 
+export interface SummaryAndTitleResult {
+  title: string;
+  summary: string;
+}
+
 export interface MistralConfig {
   apiKey: string;
   sttModel?: string;
@@ -59,6 +64,19 @@ export interface IMistralService {
    * @returns Generated title (max 60 characters)
    */
   generateTitle(text: string, apiKey: string): Promise<TitleGenerationResult>;
+
+  /**
+   * Generate both summary and title from text using Mistral's chat model with structured output
+   * @param text Text to summarize and generate title from
+   * @param apiKey Mistral API key
+   * @param customTemplate Optional custom system prompt template
+   * @returns Object containing both title and summary
+   */
+  generateSummaryAndTitle(
+    text: string,
+    apiKey: string,
+    customTemplate?: string,
+  ): Promise<SummaryAndTitleResult>;
 }
 
 /**
@@ -185,5 +203,54 @@ export class MistralService implements IMistralService {
     }
 
     return { title };
+  }
+
+  async generateSummaryAndTitle(
+    text: string,
+    apiKey: string,
+    customTemplate?: string,
+  ): Promise<SummaryAndTitleResult> {
+    const defaultTemplate =
+      "Du bist ein Assistent, der Audio-Notizen analysiert. Erstelle eine kurze Zusammenfassung (1-2 Sätze) und einen prägnanten Titel (maximal 60 Zeichen). Gib das Ergebnis als JSON zurück mit den Feldern 'title' und 'summary'.";
+    const systemPrompt = customTemplate || defaultTemplate;
+
+    const response = await fetch(this.chatUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: this.chatModel,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `Analysiere diese Notiz und gib Titel und Zusammenfassung als JSON zurück:\n\n${text}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Mistral summary and title generation failed: ${response.statusText} - ${errorText}`,
+      );
+    }
+
+    const data = await response.json();
+    const result = JSON.parse(data.choices[0].message.content);
+
+    let title = result.title?.trim() || "Audio-Notiz";
+    const summary = result.summary?.trim() || "";
+
+    // Ensure title doesn't exceed 60 characters
+    if (title.length > 60) {
+      title = title.substring(0, 57) + "...";
+    }
+
+    return { title, summary };
   }
 }
