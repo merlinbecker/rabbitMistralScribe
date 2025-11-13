@@ -25,9 +25,9 @@ export class AudioSpectrumBitmap {
     // Initialize SpectrumAnalyzer with dynamic gain and better frequency resolution
     this.spectrumAnalyzer = new SpectrumAnalyzer({
       numBands: 16,
-      minFreq: 20,      // Wider frequency range for better coverage
-      maxFreq: 4000,    // Up to 4kHz for full spectrum
-      targetFPS: 24,    // Reduced for better performance
+      minFreq: 80,      // Speech fundamental frequencies
+      maxFreq: 800,     // Focus on lower speech range
+      targetFPS: 12,    // Lower framerate for performance
       fftSize: 1024,    // Higher FFT for better frequency differentiation
       smoothingTimeConstant: 0.3,  // Less smoothing for sharper response
       targetRMS: 100,
