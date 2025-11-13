@@ -125,9 +125,9 @@ export function normalizeDataWithCompression(
 ): Uint8Array {
   if (currentRMS < 1) return data;
   
-  const gain = Math.min(3.0, targetRMS / currentRMS); // Limit max gain to 3x
+  const gain = Math.min(1.8, targetRMS / currentRMS); // Limit max gain to 1.8x - much lower
   const normalized = new Uint8Array(data.length);
-  const compressionThreshold = 180; // Start compressing above this value
+  const compressionThreshold = 120; // Start compressing earlier for softer curve
   
   for (let i = 0; i < data.length; i++) {
     const amplified = data[i] * gain;
@@ -162,13 +162,13 @@ export class SpectrumAnalyzer {
     this.config = {
       numBands: config.numBands ?? 16,
       minFreq: config.minFreq ?? 80,
-      maxFreq: config.maxFreq ?? 800,  // Updated default to 800 Hz
+      maxFreq: config.maxFreq ?? 800,
       targetFPS: config.targetFPS ?? 40,
-      fftSize: config.fftSize ?? 512,  // Higher FFT for better resolution
-      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.7,  // More smoothing
-      targetRMS: config.targetRMS ?? 60,  // Lower target to prevent overdriving
-      peakHoldTime: config.peakHoldTime ?? 500,
-      peakDecayRate: config.peakDecayRate ?? 0.95,
+      fftSize: config.fftSize ?? 256,
+      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.85,
+      targetRMS: config.targetRMS ?? 30,
+      peakHoldTime: config.peakHoldTime ?? 300,
+      peakDecayRate: config.peakDecayRate ?? 0.92,
     };
 
     this.frequencyBands = calculateLogFrequencyBands(
@@ -244,11 +244,11 @@ export class SpectrumAnalyzer {
     // Calculate RMS for normalization
     const currentRMS = calculateRMS(bandData);
     
-    // Smooth RMS with stronger exponential moving average to prevent flickering
-    this.rmsValue = 0.95 * this.rmsValue + 0.05 * currentRMS;
+    // Smooth RMS with very strong exponential moving average for calm display
+    this.rmsValue = 0.98 * this.rmsValue + 0.02 * currentRMS;
     
     // Use smoothed RMS, but prevent it from going too low
-    const effectiveRMS = Math.max(this.rmsValue, 10);
+    const effectiveRMS = Math.max(this.rmsValue, 15);
 
     // Normalize data with dynamic compression
     const normalizedData = normalizeDataWithCompression(bandData, effectiveRMS, this.config.targetRMS);

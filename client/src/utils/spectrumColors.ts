@@ -47,11 +47,14 @@ export function shouldPixelBeActive(
   row: number,
   numRows: number = 16
 ): boolean {
-  // Non-linear threshold for better visual distribution
-  // Using power curve for more visible activity in mid-range
+  // Higher threshold with steeper curve for much less activity
   const normalizedRow = (numRows - 1 - row) / (numRows - 1); // 0 (top) to 1 (bottom)
-  const threshold = Math.pow(normalizedRow, 1.5) * 255; // Power curve for smoother gradient
-  return frequency > threshold;
+  const threshold = Math.pow(normalizedRow, 1.2) * 255; // Flatter curve for less sensitivity
+  
+  // Additional threshold boost to reduce overall activity
+  const boostedThreshold = threshold * 1.3;
+  
+  return frequency > boostedThreshold;
 }
 
 /**
@@ -81,10 +84,7 @@ export function getPixelColor(
   numRows: number = 16,
   numColumns: number = 16
 ): string {
-  // Check if this pixel shows the peak indicator
-  if (isPeakPixel(peak, row, numRows)) {
-    return SPECTRUM_COLORS.PEAK;
-  }
+  // Peak indicators disabled - no white pixels
   
   // Check if pixel should be active based on amplitude
   if (shouldPixelBeActive(frequency, row, numRows)) {
