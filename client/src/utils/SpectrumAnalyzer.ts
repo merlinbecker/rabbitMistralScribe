@@ -115,6 +115,38 @@ export function normalizeData(
 }
 
 /**
+ * Normalize with soft compression to prevent overdriving
+ * Uses logarithmic compression for values above threshold
+ */
+export function normalizeDataWithCompression(
+  data: Uint8Array,
+  currentRMS: number,
+  targetRMS: number
+): Uint8Array {
+  if (currentRMS < 1) return data;
+  
+  const gain = Math.min(3.0, targetRMS / currentRMS); // Limit max gain to 3x
+  const normalized = new Uint8Array(data.length);
+  const compressionThreshold = 180; // Start compressing above this value
+  
+  for (let i = 0; i < data.length; i++) {
+    const amplified = data[i] * gain;
+    
+    if (amplified <= compressionThreshold) {
+      // Linear below threshold
+      normalized[i] = Math.min(255, Math.floor(amplified));
+    } else {
+      // Soft compression above threshold using logarithmic curve
+      const excess = amplified - compressionThreshold;
+      const compressed = compressionThreshold + Math.log1p(excess) * 15;
+      normalized[i] = Math.min(255, Math.floor(compressed));
+    }
+  }
+  
+  return normalized;
+}
+
+/**
  * Main SpectrumAnalyzer class
  */
 export class SpectrumAnalyzer {
@@ -130,11 +162,11 @@ export class SpectrumAnalyzer {
     this.config = {
       numBands: config.numBands ?? 16,
       minFreq: config.minFreq ?? 80,
-      maxFreq: config.maxFreq ?? 8000,
+      maxFreq: config.maxFreq ?? 800,  // Updated default to 800 Hz
       targetFPS: config.targetFPS ?? 40,
-      fftSize: config.fftSize ?? 256,
-      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.6,
-      targetRMS: config.targetRMS ?? 100,
+      fftSize: config.fftSize ?? 512,  // Higher FFT for better resolution
+      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.7,  // More smoothing
+      targetRMS: config.targetRMS ?? 60,  // Lower target to prevent overdriving
       peakHoldTime: config.peakHoldTime ?? 500,
       peakDecayRate: config.peakDecayRate ?? 0.95,
     };
@@ -212,11 +244,14 @@ export class SpectrumAnalyzer {
     // Calculate RMS for normalization
     const currentRMS = calculateRMS(bandData);
     
-    // Smooth RMS with exponential moving average
-    this.rmsValue = 0.9 * this.rmsValue + 0.1 * currentRMS;
+    // Smooth RMS with stronger exponential moving average to prevent flickering
+    this.rmsValue = 0.95 * this.rmsValue + 0.05 * currentRMS;
+    
+    // Use smoothed RMS, but prevent it from going too low
+    const effectiveRMS = Math.max(this.rmsValue, 10);
 
-    // Normalize data
-    const normalizedData = normalizeData(bandData, this.rmsValue, this.config.targetRMS);
+    // Normalize data with dynamic compression
+    const normalizedData = normalizeDataWithCompression(bandData, effectiveRMS, this.config.targetRMS);
 
     // Update peaks
     const peakData = new Uint8Array(this.config.numBands);

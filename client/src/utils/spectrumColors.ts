@@ -47,10 +47,10 @@ export function shouldPixelBeActive(
   row: number,
   numRows: number = 16
 ): boolean {
-  // Threshold increases from bottom to top
-  // Row 15 (bottom): threshold = (15/15) * 255 = 255 (shows only max values)
-  // Row 0 (top): threshold = (0/15) * 255 = 0 (shows all values)
-  const threshold = ((numRows - 1 - row) / (numRows - 1)) * 255;
+  // Non-linear threshold for better visual distribution
+  // Using power curve for more visible activity in mid-range
+  const normalizedRow = (numRows - 1 - row) / (numRows - 1); // 0 (top) to 1 (bottom)
+  const threshold = Math.pow(normalizedRow, 1.5) * 255; // Power curve for smoother gradient
   return frequency > threshold;
 }
 
