@@ -1,8 +1,10 @@
+
 import { useEffect, useRef, useState, useMemo } from 'react';
 import type { LEDBitmap, BitmapProvider, TransitionConfig } from '@/lib/ledBitmap/types';
 import { AudioSpectrumBitmap } from '@/lib/ledBitmap/providers/AudioSpectrumBitmap';
 import { TransitionEngine } from '@/lib/ledBitmap/TransitionEngine';
 import { createEmptyBitmap } from '@/lib/ledBitmap/utils/bitmapUtils';
+
 
 /**
  * New API - Accepts bitmap directly
@@ -57,6 +59,7 @@ export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
         pixelGap: 1,
         borderRadius: 1
       };
+
     }
     return {
       ...props,
@@ -67,6 +70,7 @@ export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
     };
   }, [props]);
 
+
   const {
     bitmap,
     transition = { enabled: false, type: 'fade', duration: 300 },
@@ -75,6 +79,7 @@ export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
     borderRadius = 1,
     className = ''
   } = normalizedProps;
+
 
   const [currentBitmap, setCurrentBitmap] = useState<LEDBitmap>(createEmptyBitmap());
   const transitionEngineRef = useRef(new TransitionEngine(transition));
