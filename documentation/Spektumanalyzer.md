@@ -8,7 +8,10 @@
 
 ## 📋 Übersicht
 
-Der Spektrumanalyzer wurde grundlegend überarbeitet, um eine präzisere und performantere Visualisierung von Audio-Frequenzen während der Aufnahme zu bieten. Die Implementierung fokussiert sich auf sprachrelevante Frequenzen (80-8000 Hz) und nutzt logarithmische Skalierung für bessere Auflösung im für Sprache wichtigen Bereich.
+Der Spektrumanalyzer wurde grundlegend überarbeitet, um eine präzisere und performantere Visualisierung von Audio-Frequenzen während der Aufnahme zu bieten. Die Implementierung fokussiert sich auf sprachrelevante Grundfrequenzen (50-1000 Hz) und nutzt logarithmische Skalierung für bessere Auflösung im für Sprache wichtigen Bereich.
+
+**Version 2.0 - Amplitude-basierte Visualisierung:**
+Die aktuelle Version verwendet ein 5-stufiges Farbschema zur Darstellung der Lautstärke (vertikal), während die Frequenzbänder horizontal angeordnet sind. Dies ermöglicht eine intuitivere Darstellung: Je höher die Amplitude, desto intensiver die Farbe (von Gold über Orange zu Rot).
 
 ---
 
@@ -73,7 +76,7 @@ export function getColorForFrequencyBand(column: number): string {
 
 **Nachher:**
 - Logarithmische Frequenzbänder für bessere Auflösung bei niedrigen Frequenzen
-- Fokussierung auf 80-8000 Hz (sprachrelevanter Bereich)
+- Fokussierung auf 50-1000 Hz (optimiert für Sprach-Grundfrequenzen)
 - Höhere Auflösung bei Bass/Mitten, wo Sprachinformation konzentriert ist
 
 ```typescript
@@ -272,13 +275,24 @@ npm run test:run
 
 ## 🎨 Visualisierungs-Schema
 
-### Farbzuordnung (horizontal)
+### Farbzuordnung (vertikal - Amplitude-basiert)
+
+Die Farben repräsentieren nun die Lautstärke (Amplitude), nicht die Frequenz:
 
 ```
-Spalte:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
-Farbe:   [-- Orange --][---- Gelb ----][------ Rot ------]
-Freq:    80Hz      200Hz        2kHz             8kHz
+Row  0-3  (Lautest):  #E10500 (Rot)
+Row  4-6:             #FA500F (Rot-Orange)
+Row  7-9:             #FF8205 (Orange)
+Row 10-12:            #FFAF00 (Orange-Gelb)
+Row 13-15 (Leisest):  #FFD700 (Gold)
 ```
+
+**Farbpalette:**
+- `#FFD700` - Gold (Quietest)
+- `#FFAF00` - Orange-Yellow
+- `#FF8205` - Orange
+- `#FA500F` - Red-Orange
+- `#E10500` - Red (Loudest)
 
 ### Amplituden-Darstellung (vertikal)
 
@@ -291,11 +305,26 @@ Row 15: ░░░░░░░░░░░░░░░░  (Min. Amplitude, Thres
 
 ### Beispiel: Sprach-Aufnahme
 
+**Neues Visualisierungskonzept (Version 2.0):**
+
+Die Visualisierung wurde grundlegend überarbeitet:
+- **Horizontal (Spalten 0-15):** Verschiedene Frequenzbänder von 50-1000 Hz
+- **Vertikal (Zeilen 0-15):** Amplitude/Lautstärke in 5-stufigem Farbverlauf
+
 **Typisches Muster:**
-- **Spalten 0-2** (80-130 Hz): Orange, mittlere Aktivität (Stimmgrundfrequenz)
-- **Spalten 3-8** (130-800 Hz): Orange/Gelb, hohe Aktivität (Formanten, Vokale)
-- **Spalten 9-11** (800-2000 Hz): Gelb, mittlere Aktivität (Konsonanten)
-- **Spalten 12-15** (2000-8000 Hz): Rot, geringe Aktivität (Zischlaute)
+- **Alle Spalten** zeigen die gleiche Farbcodierung basierend auf Amplitude
+- **Zeile 0-3:** Rote Pixel (#E10500) bei sehr lauten Passagen
+- **Zeile 4-6:** Rot-Orange (#FA500F) bei lauten Passagen
+- **Zeile 7-9:** Orange (#FF8205) bei mittlerer Lautstärke
+- **Zeile 10-12:** Orange-Gelb (#FFAF00) bei leiser Lautstärke
+- **Zeile 13-15:** Gold (#FFD700) bei sehr leiser Lautstärke
+- **Inaktive Pixel:** Schwarz (#000000)
+
+**Frequenzverteilung (50-1000 Hz):**
+- Spalte 0-3: 50-100 Hz (Tiefe Männerstimmen)
+- Spalte 4-8: 100-300 Hz (Grundfrequenzen, Vokale)
+- Spalte 9-12: 300-600 Hz (Formanten, Sprachklarheit)
+- Spalte 13-15: 600-1000 Hz (Konsonanten, Obertöne)
 
 ---
 
@@ -306,14 +335,14 @@ Row 15: ░░░░░░░░░░░░░░░░  (Min. Amplitude, Thres
 ```typescript
 interface SpectrumConfig {
   numBands?: number;              // Default: 16
-  minFreq?: number;               // Default: 80 Hz
-  maxFreq?: number;               // Default: 8000 Hz
-  targetFPS?: number;             // Default: 40
-  fftSize?: number;               // Default: 256
-  smoothingTimeConstant?: number; // Default: 0.6
+  minFreq?: number;               // Default: 50 Hz (optimiert für Sprache)
+  maxFreq?: number;               // Default: 1000 Hz (Sprach-Grundfrequenzen)
+  targetFPS?: number;             // Default: 24 (Performance/Smoothness Balance)
+  fftSize?: number;               // Default: 1024 (höhere Frequenzauflösung)
+  smoothingTimeConstant?: number; // Default: 0.3 (schnellere Reaktion)
   targetRMS?: number;             // Default: 100
-  peakHoldTime?: number;          // Default: 500 ms
-  peakDecayRate?: number;         // Default: 0.95
+  peakHoldTime?: number;          // Default: 300 ms
+  peakDecayRate?: number;         // Default: 0.92
 }
 ```
 
@@ -343,14 +372,16 @@ const lowPowerAnalyzer = new SpectrumAnalyzer({
 
 ### Vorher vs. Nachher
 
-| Metrik | Vorher | Nachher | Verbesserung |
-|--------|--------|---------|--------------|
-| FPS | 60 | 40 | -33% CPU |
-| FFT-Größe | 256 | 256 | - |
-| Smoothing | 0.8 | 0.6 | Schnellere Reaktion |
-| Frequenzbereich | 0-24kHz | 80-8000 Hz | Fokussiert |
-| Normalisierung | Keine | RMS-basiert | Konsistent |
-| Peak-Hold | Nein | Ja | Professioneller |
+| Metrik | Initial | Version 1.0 | Version 2.0 (Aktuell) | Verbesserung |
+|--------|---------|-------------|----------------------|--------------|
+| FPS | 60 | 40 | 24 | Optimiert für Performance |
+| FFT-Größe | 256 | 256 | 1024 | +400% Frequenzauflösung |
+| Smoothing | 0.8 | 0.6 | 0.3 | 2x schnellere Reaktion |
+| Frequenzbereich | 0-24kHz | 80-8000 Hz | 50-1000 Hz | Sprach-optimiert |
+| Normalisierung | Keine | RMS-basiert | RMS mit -3dB Dämpfung | Dynamisch angepasst |
+| Peak-Hold | Nein | 500ms, 0.95 | 300ms, 0.92 | Schnellerer Decay |
+| Farbschema | Frequenz-basiert | Frequenz-basiert | **Amplitude-basiert (5 Stufen)** | Intuitivere Darstellung |
+| Dynamische Anpassung | Nein | Nein | **Ja** | Auto-Skalierung bei max. Lautstärke |
 
 ### Gemessene Verbesserungen
 
@@ -540,6 +571,17 @@ npm run test:coverage  # Mindestens 80% Coverage anstreben
 ---
 
 ## ✅ Changelog
+
+### Version 2.0 (13. November 2025)
+- ✅ **Neues Farbschema:** 5-stufiger Amplitude-basierter Gradient (#FFD700 → #E10500)
+- ✅ **Optimierter Frequenzbereich:** 50-1000 Hz (Sprach-Grundfrequenzen)
+- ✅ **Erhöhte FFT-Größe:** 1024 (bessere Frequenzauflösung)
+- ✅ **Reduziertes Smoothing:** 0.3 (schnellere Reaktion auf Audio-Änderungen)
+- ✅ **Optimierte Framerate:** 24 FPS (Balance zwischen Performance und Smoothness)
+- ✅ **Dynamische Gain-Anpassung:** Auto-Skalierung bei maximaler Lautstärke
+- ✅ **-3dB Dämpfung:** Kleine Lautstärken werden nicht mehr dargestellt
+- ✅ **Schnellerer Peak-Decay:** 300ms Hold-Zeit, 0.92 Decay-Rate
+- ✅ **Verbesserte Darstellung:** Klarere Unterscheidung der Lautstärkestufen
 
 ### Version 1.0 (13. November 2025)
 - ✅ Initiale Implementierung mit allen Features aus Plans/Spectrumanalyzer.md
