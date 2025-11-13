@@ -1,96 +1,175 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import type { LEDBitmap, BitmapProvider, TransitionConfig } from '@/lib/ledBitmap/types';
+import { AudioSpectrumBitmap } from '@/lib/ledBitmap/providers/AudioSpectrumBitmap';
+import { TransitionEngine } from '@/lib/ledBitmap/TransitionEngine';
+import { createEmptyBitmap } from '@/lib/ledBitmap/utils/bitmapUtils';
 
-interface LEDPixelDisplayProps {
+/**
+ * New API - Accepts bitmap directly
+ */
+export interface LEDPixelDisplayNewProps {
+  // Data source
+  bitmap: LEDBitmap | BitmapProvider;
+  
+  // Transition settings (optional)
+  transition?: TransitionConfig;
+  
+  // Update frequency for dynamic bitmaps (ms, default: 60)
+  refreshRate?: number;
+  
+  // Display settings
+  pixelGap?: number;      // Gap between pixels in px (default: 1)
+  borderRadius?: number;  // Pixel corner radius (default: 1)
+  className?: string;     // Additional CSS classes
+}
+
+/**
+ * Legacy API - For backward compatibility
+ * @deprecated Use bitmap prop instead
+ */
+export interface LEDPixelDisplayLegacyProps {
   isRecording: boolean;
   audioStream: MediaStream | null;
 }
 
-export function LEDPixelDisplay({ isRecording, audioStream }: LEDPixelDisplayProps) {
-  const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array(16).fill(0));
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationFrameRef = useRef<number>();
+export type LEDPixelDisplayProps = LEDPixelDisplayNewProps | LEDPixelDisplayLegacyProps;
 
-  useEffect(() => {
-    if (!audioStream || !isRecording) {
-      // Reset to idle state
-      setFrequencyData(new Uint8Array(16).fill(0));
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+/**
+ * Type guard to check if props are legacy
+ */
+function isLegacyProps(props: LEDPixelDisplayProps): props is LEDPixelDisplayLegacyProps {
+  return 'isRecording' in props && 'audioStream' in props;
+}
+
+export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
+  // Convert legacy props to new bitmap-based API
+  const normalizedProps: LEDPixelDisplayNewProps = useMemo(() => {
+    if (isLegacyProps(props)) {
+      // Create AudioSpectrumBitmap provider from legacy props
+      const audioProvider = new AudioSpectrumBitmap(props.audioStream, props.isRecording);
+      if (props.isRecording && props.audioStream) {
+        audioProvider.start();
       }
-      return;
+      
+      return {
+        bitmap: () => audioProvider.getBitmap(),
+        refreshRate: 60,
+        pixelGap: 1,
+        borderRadius: 1
+      };
     }
+    return {
+      ...props,
+      refreshRate: props.refreshRate ?? 60,
+      pixelGap: props.pixelGap ?? 1,
+      borderRadius: props.borderRadius ?? 1,
+      transition: props.transition ?? { enabled: false, type: 'fade', duration: 300 }
+    };
+  }, [props]);
 
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
+  const {
+    bitmap,
+    transition = { enabled: false, type: 'fade', duration: 300 },
+    refreshRate = 60,
+    pixelGap = 1,
+    borderRadius = 1,
+    className = ''
+  } = normalizedProps;
 
-    const source = audioContext.createMediaStreamSource(audioStream);
-    source.connect(analyser);
-    analyserRef.current = analyser;
+  const [currentBitmap, setCurrentBitmap] = useState<LEDBitmap>(createEmptyBitmap());
+  const transitionEngineRef = useRef(new TransitionEngine(transition));
+  const animationFrameRef = useRef<number>();
+  const updateTimeoutRef = useRef<NodeJS.Timeout>();
 
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
+  // Update transition config when it changes
+  useEffect(() => {
+    transitionEngineRef.current.updateConfig(transition);
+  }, [transition]);
 
-    const updateFrequencyData = () => {
-      if (!analyserRef.current) return;
+  // Update bitmap from provider
+  useEffect(() => {
+    let isActive = true;
 
-      analyser.getByteFrequencyData(dataArray);
-      
-      // Average frequency data into 16 columns
-      const columnData = new Uint8Array(16);
-      const binSize = Math.floor(bufferLength / 16);
-      
-      for (let i = 0; i < 16; i++) {
-        const start = i * binSize;
-        const end = start + binSize;
-        let sum = 0;
-        for (let j = start; j < end; j++) {
-          sum += dataArray[j];
+    const updateBitmap = async () => {
+      if (!isActive) return;
+
+      try {
+        // Get new bitmap (sync or async)
+        const newBitmap = typeof bitmap === 'function' 
+          ? await bitmap() 
+          : bitmap;
+
+        if (!isActive) return;
+
+        // Start transition if enabled
+        if (transition.enabled && currentBitmap) {
+          transitionEngineRef.current.startTransition(currentBitmap, newBitmap);
+        } else {
+          setCurrentBitmap(newBitmap);
         }
-        columnData[i] = Math.floor(sum / binSize);
+
+        // Schedule next update for dynamic sources
+        if (typeof bitmap === 'function') {
+          updateTimeoutRef.current = setTimeout(() => updateBitmap(), 1000 / refreshRate);
+        }
+      } catch (error) {
+        console.error('Failed to update bitmap:', error);
       }
-      
-      setFrequencyData(columnData);
-      animationFrameRef.current = requestAnimationFrame(updateFrequencyData);
     };
 
-    updateFrequencyData();
+    updateBitmap();
+
+    return () => {
+      isActive = false;
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, [bitmap, refreshRate, transition.enabled]);
+
+  // Animation loop for transitions
+  useEffect(() => {
+    if (!transition.enabled) return;
+
+    const animate = () => {
+      const interpolatedBitmap = transitionEngineRef.current.getCurrentBitmap();
+      setCurrentBitmap(interpolatedBitmap);
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+
+    animate();
 
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      source.disconnect();
-      audioContext.close();
     };
-  }, [audioStream, isRecording]);
+  }, [transition.enabled]);
 
-  // Generate 16x16 grid
+  // Cleanup legacy audio provider
+  useEffect(() => {
+    if (isLegacyProps(props)) {
+      return () => {
+        // AudioSpectrumBitmap cleanup is handled by the provider
+      };
+    }
+  }, [props]);
+
+  // Render pixels - SAME STRUCTURE AS BEFORE
   const pixels = [];
   for (let row = 0; row < 16; row++) {
     for (let col = 0; col < 16; col++) {
-      const frequency = frequencyData[col];
-      const threshold = ((15 - row) / 15) * 255;
-      
-      let color = '#000000'; // inactive
-      
-      if (frequency > threshold) {
-        // Determine color based on row position (frequency band)
-        if (row < 5) {
-          color = '#FF4500'; // High frequency - Red
-        } else if (row < 11) {
-          color = '#FFD700'; // Mid frequency - Yellow
-        } else {
-          color = '#FF8C00'; // Low frequency - Orange
-        }
-      }
+      const pixel = currentBitmap[row][col];
       
       pixels.push(
         <div
           key={`${row}-${col}`}
           className="rounded-sm transition-colors duration-75"
-          style={{ backgroundColor: color }}
+          style={{ 
+            backgroundColor: pixel.color,
+            borderRadius: `${borderRadius}px`,
+            opacity: pixel.brightness ?? 1.0
+          }}
           data-testid={`led-pixel-${row}-${col}`}
         />
       );
@@ -99,10 +178,13 @@ export function LEDPixelDisplay({ isRecording, audioStream }: LEDPixelDisplayPro
 
   return (
     <div 
-      className="w-full aspect-square max-w-[224px] mx-auto p-1 bg-black rounded-md"
+      className={`w-full aspect-square max-w-[224px] mx-auto p-1 bg-black rounded-md ${className}`}
       data-testid="led-display"
     >
-      <div className="grid grid-cols-16 grid-rows-16 gap-[1px] w-full h-full">
+      <div 
+        className="grid grid-cols-16 grid-rows-16 w-full h-full"
+        style={{ gap: `${pixelGap}px` }}
+      >
         {pixels}
       </div>
     </div>
