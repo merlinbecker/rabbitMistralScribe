@@ -149,15 +149,17 @@ export class SpectrumAnalyzer {
   private peaks: { value: number; timestamp: number }[] = [];
   private lastFrameTime: number = -1;
   private sampleRate: number = 0;
+  private maxObservedValue: number = 0;
+  private adaptiveGain: number = 1.0;
 
   constructor(config: SpectrumConfig = {}) {
     this.config = {
       numBands: config.numBands ?? 16,
       minFreq: config.minFreq ?? 20,
       maxFreq: config.maxFreq ?? 4000,
-      targetFPS: config.targetFPS ?? 40,
-      fftSize: config.fftSize ?? 512,
-      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.5,
+      targetFPS: config.targetFPS ?? 24,
+      fftSize: config.fftSize ?? 1024,
+      smoothingTimeConstant: config.smoothingTimeConstant ?? 0.3,
       targetRMS: config.targetRMS ?? 100,
       peakHoldTime: config.peakHoldTime ?? 300,
       peakDecayRate: config.peakDecayRate ?? 0.92,
@@ -233,17 +235,33 @@ export class SpectrumAnalyzer {
       bandData[i] = count > 0 ? Math.floor(sum / count) : 0;
     }
 
-    // Calculate RMS for normalization
-    const currentRMS = calculateRMS(bandData);
-    
-    // Light smoothing only
-    this.rmsValue = 0.7 * this.rmsValue + 0.3 * currentRMS;
-    
-    // Use smoothed RMS
-    const effectiveRMS = Math.max(this.rmsValue, 5);
+    // Find current max value across all bands
+    let currentMax = 0;
+    for (let i = 0; i < bandData.length; i++) {
+      if (bandData[i] > currentMax) {
+        currentMax = bandData[i];
+      }
+    }
 
-    // Pass through without gain/compression
-    const normalizedData = normalizeDataWithCompression(bandData, effectiveRMS, this.config.targetRMS);
+    // Update observed maximum with slow decay
+    this.maxObservedValue = Math.max(currentMax, this.maxObservedValue * 0.995);
+    
+    // Ensure minimum observed value to prevent division by zero
+    const effectiveMax = Math.max(this.maxObservedValue, 50);
+    
+    // Calculate adaptive gain to utilize full display range
+    // Target is to map the current max to around 200-220 (leaving headroom)
+    const targetMax = 210;
+    this.adaptiveGain = targetMax / effectiveMax;
+    
+    // Limit gain range for stability
+    this.adaptiveGain = Math.max(0.5, Math.min(3.0, this.adaptiveGain));
+
+    // Apply adaptive gain
+    const normalizedData = new Uint8Array(this.config.numBands);
+    for (let i = 0; i < this.config.numBands; i++) {
+      normalizedData[i] = Math.min(255, Math.floor(bandData[i] * this.adaptiveGain));
+    }
 
     // Update peaks
     const peakData = new Uint8Array(this.config.numBands);
@@ -283,6 +301,8 @@ export class SpectrumAnalyzer {
   reset(): void {
     this.rmsValue = 0;
     this.lastFrameTime = -1;
+    this.maxObservedValue = 0;
+    this.adaptiveGain = 1.0;
     this.peaks = new Array(this.config.numBands).fill(null).map(() => ({
       value: 0,
       timestamp: 0,

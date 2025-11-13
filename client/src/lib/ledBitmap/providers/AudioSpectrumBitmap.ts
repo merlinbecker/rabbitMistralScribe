@@ -22,15 +22,15 @@ export class AudioSpectrumBitmap {
     private audioStream: MediaStream | null,
     private isRecording: boolean
   ) {
-    // Initialize SpectrumAnalyzer with wider frequency range and no gain
+    // Initialize SpectrumAnalyzer with dynamic gain and better frequency resolution
     this.spectrumAnalyzer = new SpectrumAnalyzer({
       numBands: 16,
       minFreq: 20,      // Wider frequency range for better coverage
       maxFreq: 4000,    // Up to 4kHz for full spectrum
-      targetFPS: 40,
-      fftSize: 512,     // Higher FFT for better resolution
-      smoothingTimeConstant: 0.5,  // Less smoothing for faster response
-      targetRMS: 100,   // Not used anymore (no gain)
+      targetFPS: 24,    // Reduced for better performance
+      fftSize: 1024,    // Higher FFT for better frequency differentiation
+      smoothingTimeConstant: 0.3,  // Less smoothing for sharper response
+      targetRMS: 100,
       peakHoldTime: 300,
       peakDecayRate: 0.92,
     });
