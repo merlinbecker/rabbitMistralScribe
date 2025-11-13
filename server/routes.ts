@@ -150,9 +150,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     console.log('[AUTH] User found:', { id: safeUser.id, username: safeUser.username });
 
-    transcriptionWorker.notifyNewJob().catch(err => 
-      console.error('[AUTH] Failed to notify worker on login:', err)
-    );
+    // Retry failed recordings on login
+    const userSettings = await storage.getUserSettings(userId);
+    if (userSettings?.mistralApiKey) {
+      console.log('[AUTH] ✅ Mistral API key found - checking for failed recordings to retry');
+      
+      const recordings = await storage.getRecordingsByUserId(userId);
+      const failedRecordings = recordings.filter(r => r.status === 'failed');
+      
+      if (failedRecordings.length > 0) {
+        console.log(`[AUTH] 🔄 Found ${failedRecordings.length} failed recording(s) - queueing for retry`);
+        
+        for (const recording of failedRecordings) {
+          console.log(`[AUTH] Queueing failed recording: ${recording.id}`);
+          
+          // Reset status to pending
+          await storage.updateRecording(recording.id, { status: 'pending' });
+          
+          // Add to job queue
+          await jobQueue.enqueue(recording.id, userId);
+        }
+        
+        // Notify worker
+        transcriptionWorker.notifyNewJob().catch(err => 
+          console.error('[AUTH] Failed to notify worker after queueing failed recordings:', err)
+        );
+      } else {
+        console.log('[AUTH] No failed recordings found to retry');
+        
+        // Still notify worker in case there are pending jobs
+        transcriptionWorker.notifyNewJob().catch(err => 
+          console.error('[AUTH] Failed to notify worker on login:', err)
+        );
+      }
+    } else {
+      console.log('[AUTH] ⚠️ No Mistral API key configured - skipping failed recordings retry');
+    }
 
     res.json(safeUser);
   });

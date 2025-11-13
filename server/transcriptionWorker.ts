@@ -162,19 +162,35 @@ export class TranscriptionWorker {
   }
 
   private async transcribeRecording(recordingId: string, userId: string): Promise<void> {
-    console.log('[WORKER] Starting transcription for:', recordingId);
+    console.log('[WORKER] ========================================');
+    console.log('[WORKER] 🎯 Starting transcription');
+    console.log('[WORKER] Recording ID:', recordingId);
+    console.log('[WORKER] User ID:', userId);
+    console.log('[WORKER] ========================================');
 
     const recording = await this.storage.getRecording(recordingId);
     if (!recording) {
+      console.error('[WORKER] ❌ Recording not found:', recordingId);
       throw new Error('Recording not found');
     }
 
+    console.log('[WORKER] 📦 Recording loaded:', {
+      id: recording.id,
+      status: recording.status,
+      hasAudioUrl: !!recording.audioUrl,
+      duration: recording.duration
+    });
+
     const settings = await this.storage.getUserSettings(userId);
     if (!settings?.mistralApiKey) {
+      console.error('[WORKER] ❌ No Mistral API key configured for user:', userId);
       throw new Error('No Mistral API key configured');
     }
 
+    console.log('[WORKER] ✅ Mistral API key found, length:', settings.mistralApiKey.length);
+
     // Update status to transcribing
+    console.log('[WORKER] 🔄 Updating status to "transcribing"...');
     await this.storage.updateRecording(recordingId, { status: 'transcribing' });
 
     // Get audio data

@@ -23,9 +23,10 @@ export class JobQueue {
   // Add job to queue
   async enqueue(recordingId: string, userId: string): Promise<string> {
     console.log('[JOBQUEUE] ========================================');
-    console.log('[JOBQUEUE] enqueue() called');
+    console.log('[JOBQUEUE] 📝 enqueue() called');
     console.log('[JOBQUEUE] Recording ID:', recordingId);
     console.log('[JOBQUEUE] User ID:', userId);
+    console.log('[JOBQUEUE] Timestamp:', new Date().toISOString());
     console.log('[JOBQUEUE] ========================================');
 
     const jobId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -39,12 +40,23 @@ export class JobQueue {
     };
 
     console.log('[JOBQUEUE] 🔄 Saving job to database...');
-    console.log('[JOBQUEUE] Job details:', job);
+    console.log('[JOBQUEUE] Job details:', JSON.stringify(job, null, 2));
 
     await this.db.set(`${this.QUEUE_PREFIX}${jobId}`, job);
 
-    console.log('[JOBQUEUE] ✅ Job saved to database');
+    // Verify job was saved
+    const savedJob = await this.db.get<TranscriptionJob>(`${this.QUEUE_PREFIX}${jobId}`);
+    if (savedJob) {
+      console.log('[JOBQUEUE] ✅ Job saved and verified in database');
+    } else {
+      console.error('[JOBQUEUE] ⚠️ WARNING: Job save verification failed!');
+    }
+
     console.log('[JOBQUEUE] Database key:', `${this.QUEUE_PREFIX}${jobId}`);
+    
+    // Get current queue size
+    const pendingCount = await this.getPendingCount();
+    console.log('[JOBQUEUE] 📊 Current queue size:', pendingCount, 'pending job(s)');
     console.log('[JOBQUEUE] ========================================');
 
     return jobId;
