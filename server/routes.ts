@@ -111,6 +111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         await authService.createSession(req, result.user.id);
+        
         console.log('[AUTH] ========================================');
         console.log('[AUTH] Session created successfully');
         console.log('[AUTH] SessionID:', req.sessionID);
@@ -123,6 +124,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           path: req.session.cookie.path
         });
         console.log('[AUTH] ========================================');
+        
+        // Wait for session to be saved before redirecting
+        await new Promise<void>((resolve, reject) => {
+          req.session.save((err) => {
+            if (err) {
+              console.error('[AUTH] ❌ Session save before redirect failed:', err);
+              reject(err);
+            } else {
+              console.log('[AUTH] ✅ Session saved before redirect');
+              resolve();
+            }
+          });
+        });
+        
         res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] Session creation failed:', sessionError);
