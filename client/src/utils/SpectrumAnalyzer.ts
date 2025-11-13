@@ -116,16 +116,26 @@ export function normalizeData(
 
 /**
  * Normalize with soft compression to prevent overdriving
- * Uses logarithmic compression for values above threshold
+ * Applies -3dB attenuation and expands dynamic range
  */
 export function normalizeDataWithCompression(
   data: Uint8Array,
   currentRMS: number,
   targetRMS: number
 ): Uint8Array {
-  // No gain, no compression - just pass through the data
-  // This gives raw, unmodified amplitude values
-  return data;
+  // Apply -3dB attenuation (multiply by ~0.707)
+  const attenuated = new Uint8Array(data.length);
+  
+  for (let i = 0; i < data.length; i++) {
+    // -3dB attenuation
+    const attenuatedValue = data[i] * 0.707;
+    
+    // Expand dynamic range by scaling up the result
+    // This gives more visual range while keeping quiet signals quiet
+    attenuated[i] = Math.min(255, Math.floor(attenuatedValue * 1.4));
+  }
+  
+  return attenuated;
 }
 
 /**

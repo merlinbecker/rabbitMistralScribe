@@ -34,18 +34,22 @@ export function getColorForAmplitude(row: number, numRows: number = 16): string 
 
 /**
  * Determine if a pixel should be lit based on amplitude threshold
- * Much lower threshold to use full display
+ * Applies -3dB attenuation to filter out quiet signals
+ * Larger dynamic range for better visualization
  */
 export function shouldPixelBeActive(
   frequency: number,
   row: number,
   numRows: number = 16
 ): boolean {
-  // Very simple threshold - just check if frequency value is above minimal level
+  // Apply -3dB attenuation (approximately 0.707 factor)
+  const attenuatedFrequency = frequency * 0.707;
+  
+  // Expanded threshold range for better dynamic range
   const normalizedRow = (numRows - 1 - row) / (numRows - 1); // 0 (top) to 1 (bottom)
-  const threshold = normalizedRow * 180; // Much lower threshold (was 255 * 1.3)
+  const threshold = normalizedRow * 200; // Wider range
 
-  return frequency > threshold;
+  return attenuatedFrequency > threshold;
 }
 
 /**
