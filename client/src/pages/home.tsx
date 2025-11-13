@@ -66,28 +66,28 @@ export default function Home() {
           // Find matching server recording by serverRecordingId
           const allLocalRecordings = await indexedDB.getAllRecordings();
           const localEntry = allLocalRecordings.find(r => r.id === localRec.id);
-          
+
           if (localEntry?.serverRecordingId) {
             const serverRec = serverRecordings.find(s => s.id === localEntry.serverRecordingId);
-            
+
             // If server has title/transcript/summary that local doesn't have, update local
             if (serverRec && (serverRec.title || serverRec.transcript || serverRec.summary)) {
               const needsUpdate = 
                 (serverRec.title && !localEntry.title) ||
                 (serverRec.transcript && !localEntry.transcript) ||
                 (serverRec.summary && !localEntry.summary);
-              
+
               if (needsUpdate) {
                 await indexedDB.updateRecording(localEntry.id, {
                   title: serverRec.title || localEntry.title,
                   transcript: serverRec.transcript || localEntry.transcript,
                   summary: serverRec.summary || localEntry.summary,
                 });
-                
+
                 // Force immediate refetch to show updated data
                 await queryClient.refetchQueries({ queryKey: ['local-recordings'] });
               }
-              
+
               // If transcription is complete, delete the audio blob to save space
               if (serverRec.status === 'transcribed' && localEntry.audioBlob) {
                 await indexedDB.deleteRecording(localEntry.id);
@@ -98,7 +98,7 @@ export default function Home() {
         }
       }
     };
-    
+
     if (localRecordings.length > 0 && serverRecordings.length > 0) {
       syncLocalWithServer().catch(console.error);
     }
@@ -192,7 +192,7 @@ export default function Home() {
         window.dispatchEvent(new Event('sideClick'));
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, []);
