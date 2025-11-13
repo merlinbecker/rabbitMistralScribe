@@ -71,6 +71,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cookie: {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Allow cross-site for OAuth
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       },
     })
@@ -110,7 +111,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         await authService.createSession(req, result.user.id);
+        console.log('[AUTH] ========================================');
+        console.log('[AUTH] Session created successfully');
         console.log('[AUTH] SessionID:', req.sessionID);
+        console.log('[AUTH] Session userId:', req.session.userId);
+        console.log('[AUTH] Cookie settings:', {
+          httpOnly: req.session.cookie.httpOnly,
+          secure: req.session.cookie.secure,
+          sameSite: req.session.cookie.sameSite,
+          domain: req.session.cookie.domain,
+          path: req.session.cookie.path
+        });
+        console.log('[AUTH] ========================================');
         res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] Session creation failed:', sessionError);
