@@ -3,9 +3,10 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Recording } from '@shared/schema';
-import { Clock, CheckCircle2, Loader2, AlertCircle, Mic, Play, Pause, Edit, Save, X } from 'lucide-react';
+import { Clock, CheckCircle2, Loader2, AlertCircle, Mic, Play, Pause, Edit, Save, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { de } from 'date-fns/locale';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
   const [editingRecording, setEditingRecording] = useState<Recording | null>(null);
   const [editedTranscript, setEditedTranscript] = useState('');
   const [editedSummary, setEditedSummary] = useState('');
+  const [expandedTranscripts, setExpandedTranscripts] = useState<Set<string>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const updateRecordingMutation = useMutation({
@@ -109,6 +111,18 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
         setPlayingId(recording.id);
       }
     }
+  };
+
+  const toggleTranscript = (recordingId: string) => {
+    setExpandedTranscripts((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(recordingId)) {
+        newSet.delete(recordingId);
+      } else {
+        newSet.add(recordingId);
+      }
+      return newSet;
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -231,7 +245,8 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
               {getStatusBadge(recording.status)}
             </div>
 
-            {isPlaying && (
+            {/* Audio player for recordings with audio */}
+            {recording.audioUrl && isPlaying && (
               <div className="mb-2">
                 <div className="h-1 bg-muted rounded-full overflow-hidden">
                   <div 
@@ -247,26 +262,61 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
               </div>
             )}
 
-            {recording.summary && (
+            {/* Summary and transcript for transcribed recordings */}
+            {recording.status === 'transcribed' && recording.transcript && (
+              <div className="mt-2 space-y-2">
+                {recording.summary && (
+                  <p className="text-caption text-muted-foreground" data-testid={`summary-${recording.id}`}>
+                    {recording.summary}
+                  </p>
+                )}
+                
+                <Collapsible
+                  open={expandedTranscripts.has(recording.id)}
+                  onOpenChange={() => toggleTranscript(recording.id)}
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-between text-caption"
+                      data-testid={`button-toggle-transcript-${recording.id}`}
+                    >
+                      <span>Transkript anzeigen</span>
+                      {expandedTranscripts.has(recording.id) ? (
+                        <ChevronUp className="w-3 h-3" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-2">
+                    <div className="bg-muted/50 rounded-md p-2 text-caption" data-testid={`transcript-${recording.id}`}>
+                      {recording.transcript}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(recording)}
+                        data-testid={`button-edit-${recording.id}`}
+                        className="flex-1"
+                      >
+                        <Edit className="w-3 h-3 mr-1" />
+                        Bearbeiten
+                      </Button>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
+
+            {/* Show summary only for non-transcribed recordings that have one */}
+            {recording.status !== 'transcribed' && recording.summary && (
               <p className="text-caption mt-2 line-clamp-2 text-muted-foreground" data-testid={`summary-${recording.id}`}>
                 {recording.summary.substring(0, 120)}
                 {recording.summary.length > 120 && '...'}
               </p>
-            )}
-
-            {(recording.status === 'transcribed' || recording.transcript) && (
-              <div className="flex gap-2 mt-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleEdit(recording)}
-                  data-testid={`button-edit-${recording.id}`}
-                  className="flex-1"
-                >
-                  <Edit className="w-3 h-3 mr-1" />
-                  Bearbeiten
-                </Button>
-              </div>
             )}
           </Card>
         );
