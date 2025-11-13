@@ -176,6 +176,10 @@ export default function Home() {
   // Handle sideClick event for Rabbit R1
   useEffect(() => {
     const handleSideClick = () => {
+      // Vibrate device if supported (Rabbit R1)
+      if ('vibrate' in navigator) {
+        navigator.vibrate(50); // Short 50ms vibration
+      }
       toggleRecording();
     };
 
