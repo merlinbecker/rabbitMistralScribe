@@ -85,6 +85,9 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
     const handleEnded = () => {
       setPlayingId(null);
       setCurrentTime(0);
+      if (audio) {
+        audio.currentTime = 0;
+      }
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
@@ -245,7 +248,7 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
               {getStatusBadge(recording.status)}
             </div>
 
-            {/* Audio player for recordings with audio */}
+            {/* Progress bar only shown during playback */}
             {recording.audioUrl && isPlaying && (
               <div className="mb-2">
                 <div className="h-1 bg-muted rounded-full overflow-hidden">
@@ -254,10 +257,6 @@ export function RecordingsList({ recordings, isLoading }: RecordingsListProps) {
                     style={{ width: `${progress}%` }}
                     data-testid={`progress-bar-${recording.id}`}
                   />
-                </div>
-                <div className="flex justify-between text-caption text-muted-foreground mt-1">
-                  <span data-testid={`current-time-${recording.id}`}>{formatDuration(Math.floor(currentTime))}</span>
-                  <span data-testid={`duration-${recording.id}`}>{formatDuration(recording.duration)}</span>
                 </div>
               </div>
             )}
