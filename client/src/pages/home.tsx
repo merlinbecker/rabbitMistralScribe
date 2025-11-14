@@ -6,12 +6,14 @@ import { RecordingControl } from '@/components/RecordingControl';
 import { RecordingsList } from '@/components/RecordingsList';
 import { useStatusNotification } from '@/hooks/use-status-notification';
 import { useRequireApiKey } from '@/hooks/useRequireApiKey';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { Recording } from '@shared/schema';
 import { Settings, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'wouter';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { indexedDB } from '@/lib/indexedDB';
+import { retryWithBackoff } from '@/utils/retryWithBackoff';
 import { ImageBitmapProvider } from '@/lib/ledBitmap';
 import type { LEDBitmap } from '@/lib/ledBitmap';
 
@@ -40,7 +42,7 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const isOnline = useOnlineStatus();
   const [isPollingActive, setIsPollingActive] = useState(false); // State to control polling
   const [mistralBitmap, setMistralBitmap] = useState<LEDBitmap | null>(null);
 
@@ -403,24 +405,33 @@ export default function Home() {
       formData.append('audio', audioBlob);
       formData.append('duration', duration.toString());
 
-      // console.log('[UPLOAD] Sending POST request to /api/recordings');
-      const response = await fetch('/api/recordings', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
+      // Use retry logic with exponential backoff for network requests
+      const recording = await retryWithBackoff(
+        async () => {
+          // console.log('[UPLOAD] Sending POST request to /api/recordings');
+          const response = await fetch('/api/recordings', {
+            method: 'POST',
+            credentials: 'include',
+            body: formData,
+          });
 
-      // console.log('[UPLOAD] Response received:', response.status, response.statusText);
+          // console.log('[UPLOAD] Response received:', response.status, response.statusText);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
-        console.error('[UPLOAD] Failed:', errorData);
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+            console.error('[UPLOAD] Failed:', errorData);
+            throw new Error(errorData.error || 'Failed to upload recording');
+          }
 
-        await indexedDB.updateRecording(localId, { status: 'failed' });
-        throw new Error(errorData.error || 'Failed to upload recording');
-      }
+          return response.json();
+        },
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 10000,
+        }
+      );
 
-      const recording = await response.json();
       // console.log('[UPLOAD] Success, server ID:', recording.id);
 
       // Update local status and store server recording ID for later cleanup
@@ -566,6 +577,7 @@ export default function Home() {
 
   return (
     <div className="h-screen flex flex-col max-w-[240px] mx-auto">
+      <OfflineIndicator />
       <StatusBar isRecording={isRecording} recordingTime={recordingTime} />
 
       <div className="flex-1 overflow-y-auto">
