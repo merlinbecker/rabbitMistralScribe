@@ -157,8 +157,8 @@ describe('SpectrumAnalyzer Class', () => {
   describe('getAnalyserConfig', () => {
     it('should return correct analyser configuration', () => {
       const config = analyzer.getAnalyserConfig();
-      expect(config.fftSize).toBe(256);
-      expect(config.smoothingTimeConstant).toBe(0.6);
+      expect(config.fftSize).toBe(1024);
+      expect(config.smoothingTimeConstant).toBe(0.3);
     });
 
     it('should return custom configuration', () => {
@@ -178,19 +178,19 @@ describe('SpectrumAnalyzer Class', () => {
     });
 
     it('should return false if insufficient time has passed', () => {
-      const frameInterval = 1000 / 40; // 25ms for 40 FPS
+      const frameInterval = 1000 / 24; // ~41.67ms for 24 FPS
       
       // First frame at time 0
       expect(analyzer.shouldUpdateFrame(0)).toBe(true);
-      // Second frame too soon (only 10ms passed, need 25ms for 40 FPS)
+      // Second frame too soon (only 10ms passed, need ~41.67ms for 24 FPS)
       expect(analyzer.shouldUpdateFrame(10)).toBe(false);
       // Third frame after enough time
       expect(analyzer.shouldUpdateFrame(frameInterval + 5)).toBe(true);
     });
 
     it('should return true after sufficient time', () => {
-      const targetFPS = 40;
-      const frameInterval = 1000 / targetFPS; // 25ms
+      const targetFPS = 24;
+      const frameInterval = 1000 / targetFPS; // ~41.67ms
       
       analyzer.shouldUpdateFrame(0);
       expect(analyzer.shouldUpdateFrame(frameInterval + 1)).toBe(true);
