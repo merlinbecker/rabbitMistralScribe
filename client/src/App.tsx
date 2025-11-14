@@ -8,6 +8,7 @@ import Home from "@/pages/home";
 import Settings from "@/pages/settings";
 import Recordings from "@/pages/recordings";
 import Auth from "@/pages/auth";
+import RabbitR1 from "@/pages/rabbit";
 import NotFound from "@/pages/not-found";
 import type { User } from "@shared/schema";
 
@@ -39,6 +40,7 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
 function Router() {
   return (
     <Switch>
+      <Route path="/rabbit" component={RabbitR1} />
       <Route path="/auth" component={Auth} />
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}
