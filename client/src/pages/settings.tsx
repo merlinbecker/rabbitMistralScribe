@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Check, ExternalLink, LogOut, AlertCircle } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
-import { useToast } from '@/hooks/use-toast';
+import { useStatusNotification } from '@/hooks/use-status-notification';
 import { apiRequest, queryClient, clearStoredToken } from '@/lib/queryClient';
 import type { UserSettings, GitHubRepo, UpdateUserSettings } from '@shared/schema';
 import {
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/alert";
 
 export default function Settings() {
-  const { toast } = useToast();
+  const { notify } = useStatusNotification();
   const [, setLocation] = useLocation();
   const [apiKey, setApiKey] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
@@ -36,15 +36,16 @@ export default function Settings() {
       clearStoredToken();
       queryClient.clear();
       setLocation('/auth');
-      toast({
+      notify({
         title: 'Abgemeldet',
         description: 'Sie wurden erfolgreich abgemeldet.',
+        type: 'success',
       });
     } catch (error) {
-      toast({
+      notify({
         title: 'Fehler',
         description: 'Abmeldung fehlgeschlagen.',
-        variant: 'destructive',
+        type: 'error',
       });
     }
   };
@@ -75,9 +76,10 @@ export default function Settings() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/settings'] });
-      toast({
+      notify({
         title: 'Einstellungen gespeichert',
         description: 'Ihre Änderungen wurden erfolgreich gespeichert.',
+        type: 'success',
       });
       
       // If API key was just saved and we were in required mode, redirect to home
@@ -89,10 +91,10 @@ export default function Settings() {
       }
     },
     onError: () => {
-      toast({
+      notify({
         title: 'Fehler',
         description: 'Einstellungen konnten nicht gespeichert werden.',
-        variant: 'destructive',
+        type: 'error',
       });
     },
   });
@@ -104,10 +106,10 @@ export default function Settings() {
   const handleBack = (e: React.MouseEvent) => {
     if (isApiKeyRequired) {
       e.preventDefault();
-      toast({
+      notify({
         title: 'API-Schlüssel erforderlich',
         description: 'Bitte geben Sie einen Mistral API-Schlüssel ein, um fortzufahren.',
-        variant: 'destructive',
+        type: 'warning',
       });
     }
   };

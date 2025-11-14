@@ -17,7 +17,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { useToast } from '@/hooks/use-toast';
+import { useStatusNotification } from '@/hooks/use-status-notification';
 import { useMutation } from '@tanstack/react-query';
 
 interface RecordingsListProps {
@@ -27,7 +27,7 @@ interface RecordingsListProps {
 }
 
 export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: RecordingsListProps) {
-  const { toast } = useToast();
+  const { notify } = useStatusNotification();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [editingRecording, setEditingRecording] = useState<Recording | null>(null);
@@ -42,17 +42,18 @@ export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: R
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
-      toast({
+      notify({
         title: 'Gespeichert',
         description: 'Die Änderungen wurden gespeichert.',
+        type: 'success',
       });
       setEditingRecording(null);
     },
     onError: (error: Error) => {
-      toast({
+      notify({
         title: 'Fehler',
         description: error.message || 'Speichern fehlgeschlagen',
-        variant: 'destructive',
+        type: 'error',
       });
     },
   });
