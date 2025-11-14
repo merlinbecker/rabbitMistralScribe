@@ -1,14 +1,19 @@
-const CACHE_NAME = 'audio-notes-v1';
+const CACHE_NAME = 'audio-notes-v2';
+const STATIC_CACHE = 'audio-notes-static-v2';
+const DYNAMIC_CACHE = 'audio-notes-dynamic-v2';
+
 const urlsToCache = [
   '/',
   '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 // Install service worker and precache core assets
 self.addEventListener('install', (event) => {
   console.log('Service Worker installing...');
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(STATIC_CACHE).then((cache) => {
       console.log('Caching core assets');
       return cache.addAll(urlsToCache).catch((err) => {
         console.error('Failed to cache:', err);
@@ -18,13 +23,37 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Fetch event - network first, fallback to cache
+// Fetch event - network first, fallback to cache for static assets
 self.addEventListener('fetch', (event) => {
-  // Skip API calls and only cache GET requests for static assets
+  // Skip API calls and only cache GET requests
   if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
     return;
   }
 
+  const url = new URL(event.request.url);
+  
+  // Static assets (images, fonts, icons) - cache first
+  if (url.pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/)) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(event.request).then((response) => {
+          if (response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // For other resources - network first, fallback to cache
   event.respondWith(
     fetch(event.request)
       .then((response) => {
@@ -32,7 +61,7 @@ self.addEventListener('fetch', (event) => {
         if (response.status === 200) {
           const responseToCache = response.clone();
           
-          caches.open(CACHE_NAME).then((cache) => {
+          caches.open(DYNAMIC_CACHE).then((cache) => {
             cache.put(event.request, responseToCache);
           });
         }
@@ -43,6 +72,7 @@ self.addEventListener('fetch', (event) => {
         // Fallback to cache if offline
         return caches.match(event.request).then((cachedResponse) => {
           if (cachedResponse) {
+            console.log('[SW] Serving from cache:', event.request.url);
             return cachedResponse;
           }
           // For navigation requests, return cached index.html
@@ -60,16 +90,20 @@ self.addEventListener('fetch', (event) => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
+  const cacheWhitelist = [CACHE_NAME, STATIC_CACHE, DYNAMIC_CACHE];
+  console.log('Service Worker activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      console.log('Service Worker activated');
     })
   );
   self.clients.claim();
