@@ -124,8 +124,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        // Use the new method to create session and ensure cookie is sent
-        await authService.createSessionWithCookie(req, res, result.user.id);
+        // Create session and wait for it to be saved
+        await authService.createSession(req, result.user.id);
 
         console.log('[AUTH] ========================================');
         console.log('[AUTH] Session created successfully');
@@ -149,9 +149,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('[AUTH] ========================================');
         console.log('[AUTH] 🔀 Redirecting to:', returnPath);
         console.log('[AUTH] Full redirect URL:', `${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
-        // Note: res.getHeader('Set-Cookie') might not be immediately available after session.save() due to async nature.
-        // The crucial part is that session.save() was called and the cookie *will* be sent by the browser.
-        console.log('[AUTH] Set-Cookie header (might be undefined if not yet processed by response stream):', res.getHeader('Set-Cookie'));
         console.log('[AUTH] ========================================');
 
         res.redirect(`${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
