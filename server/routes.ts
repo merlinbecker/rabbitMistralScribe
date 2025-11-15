@@ -124,14 +124,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        // Create session and wait for it to be saved
+        // WICHTIG: Zuerst alte Session (mit falschen Cookie-Settings) zerstören
+        const returnPath = req.session.returnPath || '/';
+        
+        await new Promise<void>((resolve, reject) => {
+          req.session.destroy((err) => {
+            if (err) {
+              console.error('[AUTH] Failed to destroy old session:', err);
+              reject(err);
+            } else {
+              console.log('[AUTH] Old session destroyed successfully');
+              resolve();
+            }
+          });
+        });
+        
+        // Jetzt neue Session mit korrekten Cookie-Settings erstellen
         await authService.createSession(req, result.user.id);
 
         console.log('[AUTH] ========================================');
         console.log('[AUTH] Session created successfully');
         console.log('[AUTH] SessionID:', req.sessionID);
         console.log('[AUTH] Session userId:', req.session.userId);
-        console.log('[AUTH] Session returnPath:', req.session.returnPath);
         console.log('[AUTH] Cookie settings:', {
           httpOnly: req.session.cookie.httpOnly,
           secure: req.session.cookie.secure,
@@ -141,10 +155,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           maxAge: req.session.cookie.maxAge
         });
         console.log('[AUTH] ========================================');
-
-        // Redirect to stored return path or default to home
-        const returnPath = req.session.returnPath || '/';
-        delete req.session.returnPath; // Clean up after use
 
         console.log('[AUTH] ========================================');
         console.log('[AUTH] 🔀 Redirecting to:', returnPath);
