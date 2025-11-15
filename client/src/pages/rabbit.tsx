@@ -145,6 +145,15 @@ export default function RabbitR1() {
     setTranscriptionStatus(prev => prev === newStatus ? prev : newStatus);
   }, [localRecordings]);
 
+  // Define toggleRecording first with useCallback
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording]);
+
   // Timer for recording
   useEffect(() => {
     if (isRecording) {
@@ -187,7 +196,7 @@ export default function RabbitR1() {
 
     window.addEventListener('sideClick', handleSideClick);
     return () => window.removeEventListener('sideClick', handleSideClick);
-  }, [isRecording, toggleRecording]);
+  }, [toggleRecording]);
 
   // Direct HTTP sync when coming online (no service worker on Rabbit R1)
   useEffect(() => {
@@ -280,14 +289,6 @@ export default function RabbitR1() {
       playRecordingStopSound();
     }
   };
-
-  const toggleRecording = useCallback(() => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  }, [isRecording]);
 
   const saveRecordingLocally = async (audioBlob: Blob, duration: number): Promise<string | null> => {
     const recordingId = crypto.randomUUID();
