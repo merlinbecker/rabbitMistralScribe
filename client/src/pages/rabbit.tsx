@@ -116,16 +116,23 @@ export default function RabbitR1() {
       }
     };
 
-    // Check on mount
-    checkAuth();
-    
     // Check if returning from auth
     const params = new URLSearchParams(window.location.search);
     if (params.get('authenticated') === 'true') {
-      console.log('[RABBIT] Returning from GitHub auth');
-      // Clean URL
+      console.log('[RABBIT] Returning from GitHub auth - waiting for session to be ready');
+      
+      // Clean URL immediately to prevent re-triggering
       window.history.replaceState({}, '', '/rabbit');
-      // Recheck auth
+      
+      // Wait a bit for session to be fully established, then check auth
+      setTimeout(() => {
+        if (isMounted) {
+          console.log('[RABBIT] Checking auth after OAuth return');
+          checkAuth();
+        }
+      }, 500);
+    } else {
+      // Normal mount - check auth immediately
       checkAuth();
     }
     
