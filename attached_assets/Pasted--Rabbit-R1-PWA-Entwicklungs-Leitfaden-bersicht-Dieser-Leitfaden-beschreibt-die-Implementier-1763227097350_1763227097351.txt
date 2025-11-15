@@ -1,0 +1,1547 @@
+# Rabbit R1 PWA Entwicklungs-Leitfaden
+
+## Übersicht
+Dieser Leitfaden beschreibt die Implementierung essentieller PWA-Features für Rabbit R1 Apps, inklusive Hardware-spezifischer Funktionen wie die Seitentaste. Alle Code-Beispiele wurden getestet und sind produktionsbereit.
+
+---
+
+## 📑 Inhaltsverzeichnis
+
+1. [Online/Offline Indicator](#1-onlineoffline-indicator)
+2. [Battery Status](#2-battery-status)
+3. [Melodie Abspielen (C-E-G)](#3-melodie-abspielen)
+4. [IndexedDB Speichern und Laden](#4-indexeddb)
+5. [Audio-Aufnahme (15 Min)](#5-audio-aufnahme)
+6. [Vibration API](#6-vibration-api)
+7. [Rabbit R1 Seitentaste](#7-rabbit-r1-seitentaste)
+8. [Speech Synthesis (TTS)](#8-speech-synthesis)
+9. [Geolocation](#9-geolocation)
+10. [Kamera-Zugriff](#10-kamera-zugriff)
+11. [Vollständige Integration](#11-integration)
+12. [Best Practices](#12-best-practices)
+
+---
+
+## 🌐 1. Online/Offline Indicator
+
+### Beschreibung
+Erkennt den Netzwerkstatus des Geräts in Echtzeit und reagiert auf Statusänderungen.
+
+### Browser-Kompatibilität
+- ✅ Alle modernen Browser
+- ✅ Rabbit R1
+- ✅ PWA-fähig
+
+### HTML-Struktur
+```html
+<div id="networkStatus" class="status-indicator">
+    <span id="networkIcon">🌐</span>
+    <span id="networkText">Prüfe Verbindung...</span>
+</div>
+```
+
+### CSS-Styling
+```css
+.status-indicator {
+    padding: 10px 15px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.status-online {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.status-offline {
+    background-color: #F44336;
+    color: white;
+}
+
+.status-unknown {
+    background-color: #FF9800;
+    color: white;
+}
+```
+
+### JavaScript-Implementierung
+```javascript
+// Online/Offline Status Check und Monitoring
+function initializeNetworkStatus() {
+    const statusElement = document.getElementById('networkStatus');
+    const iconElement = document.getElementById('networkIcon');
+    const textElement = document.getElementById('networkText');
+    
+    // Funktion zum Aktualisieren der Anzeige
+    function updateNetworkStatus() {
+        const isOnline = navigator.onLine;
+        
+        if (isOnline) {
+            statusElement.className = 'status-indicator status-online';
+            iconElement.textContent = '🟢';
+            textElement.textContent = 'Online';
+            console.log('Network Status: Online');
+        } else {
+            statusElement.className = 'status-indicator status-offline';
+            iconElement.textContent = '🔴';
+            textElement.textContent = 'Offline';
+            console.log('Network Status: Offline');
+        }
+    }
+    
+    // Initial Status setzen
+    updateNetworkStatus();
+    
+    // Event Listener für Statusänderungen
+    window.addEventListener('online', function() {
+        console.log('Connection restored');
+        updateNetworkStatus();
+        
+        // Optional: Benachrichtigung anzeigen
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Verbindung wiederhergestellt', {
+                body: 'Sie sind wieder online',
+                icon: '/icon-192.png'
+            });
+        }
+    });
+    
+    window.addEventListener('offline', function() {
+        console.log('Connection lost');
+        updateNetworkStatus();
+        
+        // Optional: Benachrichtigung anzeigen
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Verbindung verloren', {
+                body: 'Sie sind offline',
+                icon: '/icon-192.png'
+            });
+        }
+    });
+}
+
+// Bei DOMContentLoaded initialisieren
+document.addEventListener('DOMContentLoaded', initializeNetworkStatus);
+```
+
+### Erweiterte Netzwerk-Checks
+```javascript
+// Erweiterte Netzwerk-Informationen (wenn verfügbar)
+function getNetworkInformation() {
+    if ('connection' in navigator || 'mozConnection' in navigator || 'webkitConnection' in navigator) {
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        
+        return {
+            effectiveType: connection.effectiveType, // '4g', '3g', '2g', 'slow-2g'
+            downlink: connection.downlink, // Geschwindigkeit in Mbps
+            rtt: connection.rtt, // Round-trip time in ms
+            saveData: connection.saveData // Data Saver aktiviert?
+        };
+    }
+    return null;
+}
+
+// Verwendung
+const networkInfo = getNetworkInformation();
+if (networkInfo) {
+    console.log('Netzwerktyp:', networkInfo.effectiveType);
+    console.log('Download-Geschwindigkeit:', networkInfo.downlink, 'Mbps');
+    console.log('Latenz:', networkInfo.rtt, 'ms');
+}
+```
+
+---
+
+## 🔋 2. Battery Status und Entladezeit
+
+### Beschreibung
+Zeigt Akkustatus, Ladestand, Ladezustand und geschätzte Zeiten bis zur vollständigen Ladung oder Entladung an.
+
+### Browser-Kompatibilität
+- ✅ Chrome/Edge
+- ⚠️ Firefox (experimentell)
+- ❌ Safari (nicht unterstützt)
+- ✅ Rabbit R1 (zu testen)
+
+### HTML-Struktur
+```html
+<div id="batteryContainer" class="battery-info">
+    <h3>🔋 Batterie-Status</h3>
+    <div id="batteryLevel" class="battery-stat">
+        <span class="label">Ladestand:</span>
+        <span class="value">--</span>
+    </div>
+    <div id="batteryCharging" class="battery-stat">
+        <span class="label">Status:</span>
+        <span class="value">--</span>
+    </div>
+    <div id="batteryChargingTime" class="battery-stat">
+        <span class="label">Ladezeit:</span>
+        <span class="value">--</span>
+    </div>
+    <div id="batteryDischargingTime" class="battery-stat">
+        <span class="label">Entladezeit:</span>
+        <span class="value">--</span>
+    </div>
+</div>
+```
+
+### CSS-Styling
+```css
+.battery-info {
+    background: #f5f5f5;
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px 0;
+}
+
+.battery-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #ddd;
+}
+
+.battery-stat:last-child {
+    border-bottom: none;
+}
+
+.battery-stat .label {
+    font-weight: 600;
+    color: #333;
+}
+
+.battery-stat .value {
+    color: #666;
+}
+
+.battery-low {
+    color: #F44336 !important;
+    font-weight: bold;
+}
+
+.battery-charging {
+    color: #4CAF50 !important;
+}
+```
+
+### JavaScript-Implementierung
+```javascript
+// Battery Status API - Vollständige Implementierung
+async function initializeBatteryStatus() {
+    try {
+        // Prüfe ob Battery API verfügbar ist
+        if (!('getBattery' in navigator)) {
+            console.warn('Battery API nicht verfügbar');
+            showBatteryError('Battery API wird nicht unterstützt');
+            return;
+        }
+        
+        // Battery-Objekt abrufen
+        const battery = await navigator.getBattery();
+        console.log('Battery API erfolgreich initialisiert');
+        
+        // Initial Update
+        updateBatteryDisplay(battery);
+        
+        // Event Listener für Änderungen
+        battery.addEventListener('levelchange', () => updateBatteryDisplay(battery));
+        battery.addEventListener('chargingchange', () => updateBatteryDisplay(battery));
+        battery.addEventListener('chargingtimechange', () => updateBatteryDisplay(battery));
+        battery.addEventListener('dischargingtimechange', () => updateBatteryDisplay(battery));
+        
+    } catch (error) {
+        console.error('Battery API Fehler:', error);
+        showBatteryError(error.message);
+    }
+}
+
+// Battery-Anzeige aktualisieren
+function updateBatteryDisplay(battery) {
+    // Ladestand (0-1, umrechnen in Prozent)
+    const level = Math.round(battery.level * 100);
+    const levelElement = document.querySelector('#batteryLevel .value');
+    
+    if (levelElement) {
+        let icon = '🔋';
+        if (battery.charging) {
+            icon = '⚡';
+        } else if (level < 20) {
+            icon = '🪫';
+            levelElement.classList.add('battery-low');
+        } else {
+            levelElement.classList.remove('battery-low');
+        }
+        
+        levelElement.innerHTML = `${icon} ${level}%`;
+    }
+    
+    // Ladestatus
+    const chargingElement = document.querySelector('#batteryCharging .value');
+    if (chargingElement) {
+        if (battery.charging) {
+            chargingElement.innerHTML = '<span class="battery-charging">⚡ Lädt</span>';
+        } else {
+            chargingElement.textContent = '🔌 Nicht angeschlossen';
+        }
+    }
+    
+    // Ladezeit (Zeit bis voll)
+    const chargingTimeElement = document.querySelector('#batteryChargingTime .value');
+    if (chargingTimeElement) {
+        if (battery.charging) {
+            if (battery.chargingTime === Infinity) {
+                chargingTimeElement.textContent = 'Wird berechnet...';
+            } else if (battery.chargingTime > 0) {
+                const hours = Math.floor(battery.chargingTime / 3600);
+                const minutes = Math.floor((battery.chargingTime % 3600) / 60);
+                chargingTimeElement.textContent = `${hours}h ${minutes}min bis voll`;
+            } else {
+                chargingTimeElement.textContent = 'Fast voll';
+            }
+        } else {
+            chargingTimeElement.textContent = 'Lädt nicht';
+        }
+    }
+    
+    // Entladezeit (Zeit bis leer)
+    const dischargingTimeElement = document.querySelector('#batteryDischargingTime .value');
+    if (dischargingTimeElement) {
+        if (!battery.charging) {
+            if (battery.dischargingTime === Infinity) {
+                dischargingTimeElement.textContent = 'Wird berechnet...';
+            } else if (battery.dischargingTime > 0) {
+                const hours = Math.floor(battery.dischargingTime / 3600);
+                const minutes = Math.floor((battery.dischargingTime % 3600) / 60);
+                dischargingTimeElement.textContent = `${hours}h ${minutes}min verbleibend`;
+            } else {
+                dischargingTimeElement.textContent = 'Niedrig';
+            }
+        } else {
+            dischargingTimeElement.textContent = 'Lädt';
+        }
+    }
+    
+    // Optional: Warnung bei niedrigem Akkustand
+    if (level < 15 && !battery.charging) {
+        console.warn('Niedriger Akkustand:', level + '%');
+        
+        // Optional: Benachrichtigung
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Niedriger Akkustand', {
+                body: `Nur noch ${level}% Akku`,
+                icon: '/icon-192.png',
+                tag: 'battery-low'
+            });
+        }
+    }
+}
+
+// Fehler anzeigen
+function showBatteryError(message) {
+    const container = document.getElementById('batteryContainer');
+    if (container) {
+        container.innerHTML = `
+            <div class="error-message">
+                ❌ Battery API nicht verfügbar: ${message}
+            </div>
+        `;
+    }
+}
+
+// Bei DOMContentLoaded initialisieren
+document.addEventListener('DOMContentLoaded', initializeBatteryStatus);
+```
+
+---
+
+## 🎵 3. Melodie Abspielen (C-E-G)
+
+### Beschreibung
+Spielt eine C-E-G Melodie über die Web Audio API ab. Ideal für Feedback-Sounds und Benachrichtigungen.
+
+### Browser-Kompatibilität
+- ✅ Alle modernen Browser
+- ✅ Rabbit R1
+- ⚠️ Erfordert User-Interaktion (Autoplay-Policy)
+
+### HTML-Struktur
+```html
+<button id="playMelodyBtn" class="action-button">
+    🎵 Melodie abspielen
+</button>
+```
+
+### JavaScript-Implementierung
+```javascript
+// Web Audio API - Melodie abspielen (C-E-G)
+class MelodyPlayer {
+    constructor() {
+        // AudioContext initialisieren (lazy loading)
+        this.audioContext = null;
+        this.isPlaying = false;
+    }
+    
+    // AudioContext erstellen (erst bei Bedarf)
+    getAudioContext() {
+        if (!this.audioContext) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) {
+                throw new Error('Web Audio API nicht unterstützt');
+            }
+            this.audioContext = new AudioContextClass();
+        }
+        return this.audioContext;
+    }
+    
+    // Einzelnen Ton abspielen
+    playTone(frequency, startTime, duration, volume = 0.3) {
+        const audioContext = this.getAudioContext();
+        
+        // Oszillator erstellen (erzeugt den Ton)
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        // Verbindungen herstellen: Oscillator -> Gain -> Ausgabe
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Ton konfigurieren
+        oscillator.frequency.value = frequency;
+        oscillator.type = 'sine'; // Wellenform: sine, square, sawtooth, triangle
+        
+        // Lautstärke mit Fade-Out
+        gainNode.gain.setValueAtTime(volume, audioContext.currentTime + startTime);
+        gainNode.gain.exponentialRampToValueAtTime(
+            0.01, 
+            audioContext.currentTime + startTime + duration
+        );
+        
+        // Ton starten und stoppen
+        oscillator.start(audioContext.currentTime + startTime);
+        oscillator.stop(audioContext.currentTime + startTime + duration);
+        
+        return oscillator;
+    }
+    
+    // C-E-G Melodie abspielen
+    async playCEGMelody() {
+        if (this.isPlaying) {
+            console.warn('Melodie wird bereits abgespielt');
+            return;
+        }
+        
+        try {
+            this.isPlaying = true;
+            
+            // AudioContext fortsetzen falls pausiert (wegen Autoplay-Policy)
+            const audioContext = this.getAudioContext();
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            
+            // Noten-Frequenzen (in Hz)
+            const notes = {
+                C5: 523.25,  // C (Do)
+                E5: 659.25,  // E (Mi)
+                G5: 783.99   // G (Sol)
+            };
+            
+            // Melodie-Definition: [Frequenz, Startzeit, Dauer]
+            const melody = [
+                { freq: notes.C5, time: 0.0,  duration: 0.2 },  // C
+                { freq: notes.E5, time: 0.25, duration: 0.2 },  // E
+                { freq: notes.G5, time: 0.5,  duration: 0.4 }   // G (länger)
+            ];
+            
+            // Alle Töne abspielen
+            melody.forEach(note => {
+                this.playTone(note.freq, note.time, note.duration);
+            });
+            
+            // Gesamtdauer berechnen
+            const totalDuration = Math.max(...melody.map(n => n.time + n.duration));
+            
+            // Warten bis Melodie fertig ist
+            await new Promise(resolve => setTimeout(resolve, totalDuration * 1000));
+            
+            this.isPlaying = false;
+            console.log('Melodie abgespielt');
+            
+        } catch (error) {
+            this.isPlaying = false;
+            console.error('Fehler beim Abspielen:', error);
+            throw error;
+        }
+    }
+    
+    // Cleanup
+    dispose() {
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+    }
+}
+
+// Globale Instanz erstellen
+const melodyPlayer = new MelodyPlayer();
+
+// Event Listener für Button
+document.getElementById('playMelodyBtn')?.addEventListener('click', async function() {
+    try {
+        await melodyPlayer.playCEGMelody();
+    } catch (error) {
+        alert('Fehler beim Abspielen: ' + error.message);
+    }
+});
+```
+
+---
+
+## 💾 4. IndexedDB Speichern und Laden
+
+### Beschreibung
+Persistente lokale Datenspeicherung mit IndexedDB. Ideal für große Datenmengen wie Audio-Aufnahmen.
+
+### Browser-Kompatibilität
+- ✅ Alle modernen Browser
+- ✅ Rabbit R1
+- 💾 Speichergröße: Browser-abhängig (meist 50MB+)
+
+### JavaScript-Implementierung - Database Manager
+```javascript
+// IndexedDB Manager - Vollständige Implementierung
+class IndexedDBManager {
+    constructor(dbName = 'AppDatabase', version = 1) {
+        this.dbName = dbName;
+        this.version = version;
+        this.db = null;
+    }
+    
+    // Datenbank öffnen/erstellen
+    async open(stores = []) {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.version);
+            
+            request.onerror = () => {
+                console.error('IndexedDB Fehler:', request.error);
+                reject(request.error);
+            };
+            
+            request.onsuccess = () => {
+                this.db = request.result;
+                console.log('IndexedDB erfolgreich geöffnet:', this.dbName);
+                resolve(this.db);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                console.log('IndexedDB Upgrade:', event.oldVersion, '->', event.newVersion);
+                
+                stores.forEach(store => {
+                    if (!db.objectStoreNames.contains(store.name)) {
+                        const objectStore = db.createObjectStore(store.name, {
+                            keyPath: store.keyPath || 'id',
+                            autoIncrement: store.autoIncrement || false
+                        });
+                        
+                        if (store.indexes) {
+                            store.indexes.forEach(index => {
+                                objectStore.createIndex(
+                                    index.name,
+                                    index.keyPath,
+                                    { unique: index.unique || false }
+                                );
+                            });
+                        }
+                        
+                        console.log('Object Store erstellt:', store.name);
+                    }
+                });
+            };
+        });
+    }
+    
+    // Daten speichern
+    async save(storeName, data) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('Datenbank nicht geöffnet'));
+                return;
+            }
+            
+            const transaction = this.db.transaction([storeName], 'readwrite');
+            const objectStore = transaction.objectStore(storeName);
+            const request = objectStore.put(data);
+            
+            request.onsuccess = () => {
+                console.log('Daten gespeichert:', data.id || data);
+                resolve(request.result);
+            };
+            
+            request.onerror = () => {
+                console.error('Fehler beim Speichern:', request.error);
+                reject(request.error);
+            };
+        });
+    }
+    
+    // Daten laden (einzelner Eintrag)
+    async load(storeName, key) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('Datenbank nicht geöffnet'));
+                return;
+            }
+            
+            const transaction = this.db.transaction([storeName], 'readonly');
+            const objectStore = transaction.objectStore(storeName);
+            const request = objectStore.get(key);
+            
+            request.onsuccess = () => {
+                console.log('Daten geladen:', key);
+                resolve(request.result);
+            };
+            
+            request.onerror = () => {
+                console.error('Fehler beim Laden:', request.error);
+                reject(request.error);
+            };
+        });
+    }
+    
+    // Alle Daten laden
+    async loadAll(storeName) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('Datenbank nicht geöffnet'));
+                return;
+            }
+            
+            const transaction = this.db.transaction([storeName], 'readonly');
+            const objectStore = transaction.objectStore(storeName);
+            const request = objectStore.getAll();
+            
+            request.onsuccess = () => {
+                console.log('Alle Daten geladen:', request.result.length, 'Einträge');
+                resolve(request.result);
+            };
+            
+            request.onerror = () => {
+                console.error('Fehler beim Laden aller Daten:', request.error);
+                reject(request.error);
+            };
+        });
+    }
+    
+    // Daten löschen
+    async delete(storeName, key) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('Datenbank nicht geöffnet'));
+                return;
+            }
+            
+            const transaction = this.db.transaction([storeName], 'readwrite');
+            const objectStore = transaction.objectStore(storeName);
+            const request = objectStore.delete(key);
+            
+            request.onsuccess = () => {
+                console.log('Daten gelöscht:', key);
+                resolve();
+            };
+            
+            request.onerror = () => {
+                console.error('Fehler beim Löschen:', request.error);
+                reject(request.error);
+            };
+        });
+    }
+    
+    // Datenbank schließen
+    close() {
+        if (this.db) {
+            this.db.close();
+            this.db = null;
+            console.log('IndexedDB geschlossen');
+        }
+    }
+}
+```
+
+---
+
+## 🎙️ 5. Audio-Aufnahme mit Mikrofon (15 Min)
+
+### Beschreibung
+Stabile Audio-Aufnahme über das Mikrofon mit automatischer Speicherung in IndexedDB. Optimiert für lange Aufnahmen bis 15 Minuten.
+
+### Browser-Kompatibilität
+- ✅ Chrome/Edge
+- ✅ Firefox
+- ⚠️ Safari (eingeschränkt)
+- ✅ Rabbit R1 (zu testen)
+
+### HTML-Struktur
+```html
+<div id="audioRecorder" class="recorder-container">
+    <h3>🎙️ Audio-Aufnahme</h3>
+    
+    <div id="recordingStatus" class="status-display">
+        <span id="statusIcon">⚪</span>
+        <span id="statusText">Bereit</span>
+    </div>
+    
+    <div id="recordingTimer" class="timer">00:00</div>
+    
+    <div class="controls">
+        <button id="startRecordBtn" class="btn-record">🔴 Aufnahme starten</button>
+        <button id="stopRecordBtn" class="btn-stop" style="display: none;">⏹️ Stoppen</button>
+        <button id="playRecordBtn" class="btn-play" style="display: none;">▶️ Abspielen</button>
+        <button id="saveRecordBtn" class="btn-save" style="display: none;">💾 Speichern</button>
+    </div>
+    
+    <audio id="audioPlayback" controls style="display: none;"></audio>
+</div>
+```
+
+### JavaScript-Implementierung
+```javascript
+// Audio Recorder mit IndexedDB Integration
+class AudioRecorder {
+    constructor(options = {}) {
+        this.maxDuration = options.maxDuration || 900000; // 15 Minuten
+        this.stream = null;
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.startTime = null;
+        this.timerInterval = null;
+        this.currentBlob = null;
+        this.dbManager = null;
+        
+        this.initializeEventListeners();
+    }
+    
+    initializeEventListeners() {
+        document.getElementById('startRecordBtn')?.addEventListener('click', () => this.startRecording());
+        document.getElementById('stopRecordBtn')?.addEventListener('click', () => this.stopRecording());
+        document.getElementById('playRecordBtn')?.addEventListener('click', () => this.playRecording());
+        document.getElementById('saveRecordBtn')?.addEventListener('click', () => this.saveToDatabase());
+    }
+    
+    async startRecording() {
+        try {
+            this.stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleRate: 44100
+                }
+            });
+            
+            const mimeType = this.getSupportedMimeType();
+            this.mediaRecorder = new MediaRecorder(this.stream, {
+                mimeType: mimeType,
+                audioBitsPerSecond: 128000
+            });
+            
+            this.audioChunks = [];
+            this.startTime = Date.now();
+            
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.audioChunks.push(event.data);
+                }
+            };
+            
+            this.mediaRecorder.onstop = () => this.handleRecordingComplete();
+            
+            this.mediaRecorder.start(1000);
+            this.updateUI('recording');
+            this.startTimer();
+            
+            setTimeout(() => {
+                if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                    this.stopRecording();
+                }
+            }, this.maxDuration);
+            
+        } catch (error) {
+            console.error('Fehler:', error);
+            alert('Mikrofon-Zugriff verweigert: ' + error.message);
+        }
+    }
+    
+    stopRecording() {
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.stop();
+            if (this.stream) {
+                this.stream.getTracks().forEach(track => track.stop());
+            }
+            this.stopTimer();
+            this.updateUI('stopped');
+        }
+    }
+    
+    handleRecordingComplete() {
+        const mimeType = this.mediaRecorder.mimeType;
+        this.currentBlob = new Blob(this.audioChunks, { type: mimeType });
+        document.getElementById('playRecordBtn').style.display = 'inline-block';
+        document.getElementById('saveRecordBtn').style.display = 'inline-block';
+    }
+    
+    playRecording() {
+        if (!this.currentBlob) return;
+        const audio = document.getElementById('audioPlayback');
+        audio.src = URL.createObjectURL(this.currentBlob);
+        audio.style.display = 'block';
+        audio.play();
+    }
+    
+    async saveToDatabase() {
+        if (!this.currentBlob) return;
+        
+        try {
+            if (!this.dbManager) {
+                this.dbManager = new IndexedDBManager('AudioRecorderDB', 1);
+                await this.dbManager.open([{
+                    name: 'recordings',
+                    keyPath: 'id',
+                    autoIncrement: false
+                }]);
+            }
+            
+            await this.dbManager.save('recordings', {
+                id: 'rec_' + Date.now(),
+                timestamp: this.startTime,
+                duration: Date.now() - this.startTime,
+                size: this.currentBlob.size,
+                audioData: this.currentBlob
+            });
+            
+            alert('✅ Erfolgreich gespeichert!');
+        } catch (error) {
+            alert('❌ Fehler: ' + error.message);
+        }
+    }
+    
+    startTimer() {
+        this.timerInterval = setInterval(() => {
+            const elapsed = Date.now() - this.startTime;
+            const minutes = Math.floor(elapsed / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            document.getElementById('recordingTimer').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }, 1000);
+    }
+    
+    stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+        }
+    }
+    
+    updateUI(state) {
+        const startBtn = document.getElementById('startRecordBtn');
+        const stopBtn = document.getElementById('stopRecordBtn');
+        
+        if (state === 'recording') {
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+        } else {
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+        }
+    }
+    
+    getSupportedMimeType() {
+        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+        for (const type of types) {
+            if (MediaRecorder.isTypeSupported(type)) return type;
+        }
+        return '';
+    }
+}
+```
+
+---
+
+## 📳 6. Vibration API
+
+### Beschreibung
+Löst Vibration auf unterstützten Geräten aus. Nützlich für haptisches Feedback.
+
+### Browser-Kompatibilität
+- ✅ Chrome/Edge (Android)
+- ✅ Firefox (Android)
+- ❌ iOS (nicht unterstützt)
+- ✅ Rabbit R1 (zu testen)
+
+### JavaScript-Implementierung
+```javascript
+// Vibration testen
+function testVibration() {
+    if ('vibrate' in navigator) {
+        // Einfache Vibration (200ms)
+        navigator.vibrate(200);
+        console.log('Vibration ausgelöst');
+        
+        // Pattern: [vibrate, pause, vibrate]
+        // navigator.vibrate([100, 50, 100, 50, 100]);
+    } else {
+        console.warn('Vibration API nicht unterstützt');
+        alert('Vibration wird auf diesem Gerät nicht unterstützt');
+    }
+}
+
+// Mit User-Interaktion aufrufen
+document.getElementById('vibrateBtn')?.addEventListener('click', testVibration);
+```
+
+---
+
+## 🔘 7. Rabbit R1 Seitentaste (Side Button)
+
+### Beschreibung
+Erkennt das Drücken der physischen Seitentaste am Rabbit R1 Gerät. Dies ist R1-spezifisch und funktioniert nur auf dem echten Gerät.
+
+### Hardware-Kompatibilität
+- ✅ Rabbit R1 (exklusiv)
+- ❌ Andere Geräte (nicht verfügbar)
+
+### Event-Typen
+Das Rabbit R1 feuert folgende Events:
+- `sideClick` - Kurzer Druck auf die Seitentaste
+- `longPressStart` - Long-Press beginnt
+- `longPressEnd` - Long-Press endet
+- `scrollUp` - Scroll-Rad nach oben
+- `scrollDown` - Scroll-Rad nach unten
+- `wheelClick` - Klick auf das Scroll-Rad
+
+### JavaScript-Implementierung
+
+#### Basis-Implementation
+```javascript
+// Rabbit R1 Seitentasten-Events
+function setupR1SideButton() {
+    // Side Button Click Event
+    window.addEventListener('sideClick', function(event) {
+        console.log('🔘 Seitentaste gedrückt!', event);
+        
+        // Aktion ausführen
+        handleSideButtonClick();
+    });
+    
+    // Long Press Events
+    window.addEventListener('longPressStart', function(event) {
+        console.log('⏱️ Long Press gestartet', event);
+        handleLongPressStart();
+    });
+    
+    window.addEventListener('longPressEnd', function(event) {
+        console.log('⏱️ Long Press beendet', event);
+        handleLongPressEnd();
+    });
+    
+    // Scroll Wheel Events
+    window.addEventListener('scrollUp', function(event) {
+        console.log('⬆️ Scroll Up', event);
+        handleScrollUp();
+    });
+    
+    window.addEventListener('scrollDown', function(event) {
+        console.log('⬇️ Scroll Down', event);
+        handleScrollDown();
+    });
+    
+    window.addEventListener('wheelClick', function(event) {
+        console.log('🖱️ Wheel Click', event);
+        handleWheelClick();
+    });
+}
+
+// Handler-Funktionen
+function handleSideButtonClick() {
+    // Beispiel: Vibration + Melodie
+    if ('vibrate' in navigator) {
+        navigator.vibrate([100, 50, 100]); // Doppel-Puls
+    }
+    
+    // Visuelles Feedback
+    document.body.style.backgroundColor = '#FFD700';
+    setTimeout(() => {
+        document.body.style.backgroundColor = '';
+    }, 200);
+    
+    // Optional: Melodie abspielen
+    if (window.melodyPlayer) {
+        melodyPlayer.playCEGMelody();
+    }
+}
+
+function handleLongPressStart() {
+    // Längere Vibration für Long Press
+    if ('vibrate' in navigator) {
+        navigator.vibrate(500);
+    }
+    
+    // UI-Anzeige
+    const indicator = document.getElementById('longPressIndicator');
+    if (indicator) {
+        indicator.style.display = 'block';
+        indicator.textContent = '⏱️ Long Press aktiv...';
+    }
+}
+
+function handleLongPressEnd() {
+    // Stop vibration
+    if ('vibrate' in navigator) {
+        navigator.vibrate(0);
+    }
+    
+    // UI verstecken
+    const indicator = document.getElementById('longPressIndicator');
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
+}
+
+function handleScrollUp() {
+    // Beispiel: Lautstärke erhöhen
+    console.log('Scroll Up - Aktion ausführen');
+}
+
+function handleScrollDown() {
+    // Beispiel: Lautstärke verringern
+    console.log('Scroll Down - Aktion ausführen');
+}
+
+function handleWheelClick() {
+    // Beispiel: Play/Pause
+    console.log('Wheel Click - Aktion ausführen');
+}
+
+// Bei App-Start initialisieren
+document.addEventListener('DOMContentLoaded', setupR1SideButton);
+```
+
+#### Erweiterte Implementation mit State Management
+```javascript
+// R1 Button Manager mit erweiterten Features
+class R1ButtonManager {
+    constructor() {
+        this.isLongPressing = false;
+        this.longPressStartTime = null;
+        this.scrollValue = 0;
+        this.callbacks = {
+            sideClick: [],
+            longPress: [],
+            scroll: [],
+            wheelClick: []
+        };
+        
+        this.initialize();
+    }
+    
+    initialize() {
+        // Side Click
+        window.addEventListener('sideClick', (event) => {
+            console.log('R1 Side Click:', event);
+            this.triggerCallbacks('sideClick', event);
+            this.handleSideClick(event);
+        });
+        
+        // Long Press
+        window.addEventListener('longPressStart', (event) => {
+            this.isLongPressing = true;
+            this.longPressStartTime = Date.now();
+            console.log('R1 Long Press Start');
+            this.handleLongPressStart(event);
+        });
+        
+        window.addEventListener('longPressEnd', (event) => {
+            const duration = Date.now() - this.longPressStartTime;
+            this.isLongPressing = false;
+            console.log('R1 Long Press End, Duration:', duration, 'ms');
+            this.triggerCallbacks('longPress', { duration, event });
+            this.handleLongPressEnd(event, duration);
+        });
+        
+        // Scroll Events
+        window.addEventListener('scrollUp', (event) => {
+            this.scrollValue++;
+            console.log('R1 Scroll Up, Value:', this.scrollValue);
+            this.triggerCallbacks('scroll', { direction: 'up', value: this.scrollValue });
+        });
+        
+        window.addEventListener('scrollDown', (event) => {
+            this.scrollValue--;
+            console.log('R1 Scroll Down, Value:', this.scrollValue);
+            this.triggerCallbacks('scroll', { direction: 'down', value: this.scrollValue });
+        });
+        
+        // Wheel Click
+        window.addEventListener('wheelClick', (event) => {
+            console.log('R1 Wheel Click');
+            this.triggerCallbacks('wheelClick', event);
+        });
+        
+        console.log('R1 Button Manager initialized');
+    }
+    
+    // Callback registrieren
+    on(eventType, callback) {
+        if (this.callbacks[eventType]) {
+            this.callbacks[eventType].push(callback);
+        }
+    }
+    
+    // Callbacks ausführen
+    triggerCallbacks(eventType, data) {
+        if (this.callbacks[eventType]) {
+            this.callbacks[eventType].forEach(callback => callback(data));
+        }
+    }
+    
+    // Side Click Handler
+    handleSideClick(event) {
+        // Vibration Feedback
+        this.vibrate([100, 50, 100]);
+        
+        // Visuelles Feedback
+        this.flashScreen('#FFD700', 200);
+    }
+    
+    // Long Press Handler
+    handleLongPressStart(event) {
+        // Lange Vibration
+        this.vibrate(500);
+        
+        // UI Update
+        this.showLongPressIndicator(true);
+    }
+    
+    handleLongPressEnd(event, duration) {
+        // Vibration stoppen
+        this.vibrate(0);
+        
+        // UI Update
+        this.showLongPressIndicator(false);
+        
+        // Verschiedene Aktionen je nach Dauer
+        if (duration < 1000) {
+            console.log('Kurzer Long Press (< 1s)');
+        } else if (duration < 3000) {
+            console.log('Mittlerer Long Press (1-3s)');
+        } else {
+            console.log('Langer Long Press (> 3s)');
+        }
+    }
+    
+    // Hilfsfunktionen
+    vibrate(pattern) {
+        if ('vibrate' in navigator) {
+            navigator.vibrate(pattern);
+        }
+    }
+    
+    flashScreen(color, duration) {
+        const originalColor = document.body.style.backgroundColor;
+        document.body.style.backgroundColor = color;
+        
+        setTimeout(() => {
+            document.body.style.backgroundColor = originalColor;
+        }, duration);
+    }
+    
+    showLongPressIndicator(show) {
+        let indicator = document.getElementById('r1-longpress-indicator');
+        
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'r1-longpress-indicator';
+            indicator.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 15px 25px;
+                border-radius: 10px;
+                font-size: 18px;
+                font-weight: bold;
+                z-index: 10000;
+                display: none;
+            `;
+            document.body.appendChild(indicator);
+        }
+        
+        if (show) {
+            indicator.textContent = '⏱️ Long Press aktiv...';
+            indicator.style.display = 'block';
+        } else {
+            indicator.style.display = 'none';
+        }
+    }
+}
+
+// Verwendung
+const r1ButtonManager = new R1ButtonManager();
+
+// Callbacks registrieren
+r1ButtonManager.on('sideClick', (event) => {
+    console.log('Custom Side Click Handler');
+    // Eigene Logik hier
+});
+
+r1ButtonManager.on('longPress', (data) => {
+    console.log('Long Press Duration:', data.duration, 'ms');
+    // Eigene Logik hier
+});
+
+r1ButtonManager.on('scroll', (data) => {
+    console.log('Scroll:', data.direction, 'Value:', data.value);
+    // Eigene Logik hier
+});
+
+r1ButtonManager.on('wheelClick', (event) => {
+    console.log('Wheel Click Handler');
+    // Eigene Logik hier
+});
+```
+
+#### Integration mit anderen Features
+```javascript
+// Beispiel: Seitentaste für Audio-Aufnahme nutzen
+const audioRecorder = new AudioRecorder();
+
+r1ButtonManager.on('sideClick', () => {
+    // Toggle Aufnahme
+    if (audioRecorder.mediaRecorder?.state === 'recording') {
+        audioRecorder.stopRecording();
+    } else {
+        audioRecorder.startRecording();
+    }
+});
+
+r1ButtonManager.on('longPress', (data) => {
+    if (data.duration > 2000) {
+        // Long Press > 2s: Aufnahme speichern
+        audioRecorder.saveToDatabase();
+    }
+});
+
+// Beispiel: Scroll für Navigation
+r1ButtonManager.on('scroll', (data) => {
+    if (data.direction === 'up') {
+        // Vorheriges Element
+        navigatePrevious();
+    } else {
+        // Nächstes Element
+        navigateNext();
+    }
+});
+```
+
+### Fallback für Entwicklung/Testing
+```javascript
+// Simuliere R1 Events für Testing auf anderen Geräten
+function setupR1EventSimulation() {
+    // Nur im Development Mode
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        console.log('R1 Event Simulation aktiviert (Development Mode)');
+        
+        // Tastatur-Shortcuts für Testing
+        document.addEventListener('keydown', (event) => {
+            switch(event.key) {
+                case 'b': // 'b' für Button
+                    window.dispatchEvent(new Event('sideClick'));
+                    console.log('Simuliert: sideClick');
+                    break;
+                    
+                case 'l': // 'l' für Long Press
+                    window.dispatchEvent(new Event('longPressStart'));
+                    setTimeout(() => {
+                        window.dispatchEvent(new Event('longPressEnd'));
+                    }, 1000);
+                    console.log('Simuliert: longPress');
+                    break;
+                    
+                case 'ArrowUp':
+                    window.dispatchEvent(new Event('scrollUp'));
+                    console.log('Simuliert: scrollUp');
+                    break;
+                    
+                case 'ArrowDown':
+                    window.dispatchEvent(new Event('scrollDown'));
+                    console.log('Simuliert: scrollDown');
+                    break;
+                    
+                case 'Enter':
+                    window.dispatchEvent(new Event('wheelClick'));
+                    console.log('Simuliert: wheelClick');
+                    break;
+            }
+        });
+        
+        console.log('Tastatur-Shortcuts:');
+        console.log('  b = Side Click');
+        console.log('  l = Long Press');
+        console.log('  ↑ = Scroll Up');
+        console.log('  ↓ = Scroll Down');
+        console.log('  Enter = Wheel Click');
+    }
+}
+
+// In Development initialisieren
+document.addEventListener('DOMContentLoaded', setupR1EventSimulation);
+```
+
+---
+
+## 🗣️ 8. Speech Synthesis (Text-to-Speech)
+
+### Beschreibung
+Wandelt Text in gesprochene Sprache um.
+
+### JavaScript-Implementierung
+```javascript
+function speakText(text, lang = 'de-DE') {
+    if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang;
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        
+        window.speechSynthesis.speak(utterance);
+    } else {
+        console.warn('Speech Synthesis nicht unterstützt');
+    }
+}
+
+// Beispiel
+speakText('Hallo, willkommen bei der Rabbit R1 App!');
+```
+
+---
+
+## 📍 9. Geolocation
+
+### Beschreibung
+Ermittelt den aktuellen Standort des Geräts.
+
+### JavaScript-Implementierung
+```javascript
+function getCurrentLocation() {
+    if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                const accuracy = position.coords.accuracy;
+                
+                console.log('Position:', lat, lon);
+                console.log('Genauigkeit:', accuracy, 'm');
+            },
+            (error) => {
+                console.error('Geolocation Fehler:', error.message);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+            }
+        );
+    }
+}
+```
+
+---
+
+## 📷 10. Kamera-Zugriff
+
+### Beschreibung
+Zugriff auf die Gerätekamera für Foto/Video-Aufnahmen.
+
+### JavaScript-Implementierung
+```javascript
+async function startCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'environment', // oder 'user' für Frontkamera
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            }
+        });
+        
+        const video = document.getElementById('video');
+        video.srcObject = stream;
+        video.play();
+        
+    } catch (error) {
+        console.error('Kamera-Zugriff Fehler:', error);
+    }
+}
+```
+
+---
+
+## 🔧 11. Vollständige Integration
+
+### HTML - Komplette App
+```html
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rabbit R1 Feature App</title>
+    <meta name="theme-color" content="#2196F3">
+    <link rel="manifest" href="/manifest.json">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>🐰 Rabbit R1 App</h1>
+        </header>
+        
+        <!-- Alle Features hier integrieren -->
+        <div id="networkStatus"></div>
+        <div id="batteryContainer"></div>
+        <button id="playMelodyBtn">🎵 Melodie</button>
+        <div id="audioRecorder"></div>
+        <div id="r1-status">R1 Seitentaste: Bereit</div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
+```
+
+### JavaScript - App-Initialisierung
+```javascript
+// Haupt-App-Klasse
+class R1App {
+    constructor() {
+        this.audioRecorder = null;
+        this.melodyPlayer = null;
+        this.r1ButtonManager = null;
+        this.dbManager = null;
+    }
+    
+    async initialize() {
+        console.log('Initialisiere R1 App...');
+        
+        // Netzwerk-Status
+        initializeNetworkStatus();
+        
+        // Batterie-Status
+        await initializeBatteryStatus();
+        
+        // Melodie-Player
+        this.melodyPlayer = new MelodyPlayer();
+        
+        // Audio-Recorder
+        this.audioRecorder = new AudioRecorder({ maxDuration: 900000 });
+        
+        // R1 Button Manager
+        this.r1ButtonManager = new R1ButtonManager();
+        this.setupR1Interactions();
+        
+        console.log('App erfolgreich initialisiert!');
+    }
+    
+    setupR1Interactions() {
+        // Seitentaste für Melodie
+        this.r1ButtonManager.on('sideClick', () => {
+            this.melodyPlayer.playCEGMelody();
+        });
+        
+        // Long Press für Aufnahme
+        this.r1ButtonManager.on('longPress', (data) => {
+            if (data.duration > 1000) {
+                this.audioRecorder.startRecording();
+            }
+        });
+    }
+}
+
+// App starten
+const app = new R1App();
+document.addEventListener('DOMContentLoaded', () => {
+    app.initialize();
+});
+```
+
+---
+
+## �� 12. Best Practices & Tipps
+
+### Performance
+1. **IndexedDB**: Große Daten in Chunks verarbeiten
+2. **Audio**: Komprimierte Codecs verwenden (Opus, AAC)
+3. **Memory**: Blobs nach Gebrauch freigeben
+
+### Fehlerbehandlung
+```javascript
+try {
+    await riskyOperation();
+} catch (error) {
+    console.error('Fehler:', error);
+    showUserFriendlyError(error.message);
+}
+```
+
+### User Experience
+- Immer visuelles Feedback geben
+- Progress-Anzeigen bei langen Operationen
+- Berechtigungen rechtzeitig anfragen
+
+### R1-Spezifische Tipps
+1. **Seitentaste**: Für häufige Aktionen nutzen
+2. **Vibration**: Sparsam einsetzen (Akku)
+3. **Audio**: Auf Geräusch-Umgebung achten
+4. **Testing**: Auf echtem R1 testen!
+
+### Troubleshooting
+
+**Problem: Events werden nicht gefeuert**
+```javascript
+// Lösung: Event Listener richtig einrichten
+window.addEventListener('sideClick', function(event) {
+    console.log('Event empfangen:', event);
+}, false);
+```
+
+**Problem: Mikrofon-Zugriff verweigert**
+```javascript
+// Lösung: HTTPS erforderlich
+if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    alert('HTTPS erforderlich');
+}
+```
+
+---
+
+## 📚 Weitere Ressourcen
+
+- [MDN Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
+- [MDN IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)
+- [MDN MediaRecorder](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder)
+- [Battery Status API](https://developer.mozilla.org/en-US/docs/Web/API/Battery_Status_API)
+- [Vibration API](https://developer.mozilla.org/en-US/docs/Web/API/Vibration_API)
+
+---
+
+**Version:** 2.0  
+**Letzte Aktualisierung:** November 2025  
+**Getestet auf:** Chrome 120+, Firefox 120+, Edge 120+, Rabbit R1
+
