@@ -66,6 +66,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Session configuration with Replit Database Store
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   app.use(
     session({
       store: new ReplitSessionStore(databaseService),
@@ -74,10 +76,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        secure: true, // Jetzt sicher, da wir proxy vertrauen
+        secure: isProduction, // Only secure in production
         sameSite: 'lax',
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        domain: undefined, // Let browser set domain automatically
       },
+      name: 'connect.sid', // Explicit session cookie name
     })
   );
 
@@ -147,6 +151,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log('[AUTH] ========================================');
               console.log('[AUTH] ✅ Session saved before redirect');
               console.log('[AUTH] Session after save:', JSON.stringify(req.session, null, 2));
+              console.log('[AUTH] Session ID:', req.sessionID);
+              console.log('[AUTH] Response headers will include Set-Cookie');
               console.log('[AUTH] ========================================');
               resolve();
             }
@@ -160,6 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('[AUTH] ========================================');
         console.log('[AUTH] 🔀 Redirecting to:', returnPath);
         console.log('[AUTH] Full redirect URL:', `${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
+        console.log('[AUTH] Set-Cookie header:', res.getHeader('Set-Cookie'));
         console.log('[AUTH] ========================================');
         
         res.redirect(`${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
