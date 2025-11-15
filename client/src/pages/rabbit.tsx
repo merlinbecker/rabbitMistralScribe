@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { LEDPixelDisplay } from '@/components/LEDPixelDisplay';
 import { RabbitStatusBar } from '@/components/RabbitStatusBar';
@@ -88,8 +88,10 @@ export default function RabbitR1() {
     };
   }, []);
 
-  // Check authentication status (non-blocking)
+  // Check authentication status (non-blocking) - only once on mount and when coming online
   useEffect(() => {
+    let isMounted = true;
+    
     const checkAuth = async () => {
       if (!isOnline) return;
       
@@ -97,14 +99,22 @@ export default function RabbitR1() {
         const response = await fetch('/api/auth/user', {
           credentials: 'include',
         });
-        setIsAuthenticated(response.ok);
+        if (isMounted) {
+          setIsAuthenticated(response.ok);
+        }
       } catch {
-        setIsAuthenticated(false);
+        if (isMounted) {
+          setIsAuthenticated(false);
+        }
       }
     };
 
     checkAuth();
-  }, [isOnline]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Only run once on mount
 
   // Fetch local recordings from IndexedDB
   const { data: localRecordings = [] } = useQuery({
@@ -113,29 +123,26 @@ export default function RabbitR1() {
       const pending = await indexedDB.getAllRecordings();
       return pending;
     },
-    refetchInterval: 3000, // Check every 3 seconds
+    refetchInterval: 10000, // Check every 10 seconds (reduced from 3s)
   });
 
-  // Monitor transcription status from local recordings
+  // Monitor transcription status from local recordings (memoized to prevent unnecessary updates)
   useEffect(() => {
-    if (localRecordings.length === 0) {
-      setTranscriptionStatus('idle');
-      return;
-    }
+    const newStatus = (() => {
+      if (localRecordings.length === 0) return 'idle';
+      
+      const hasUploading = localRecordings.some(r => r.status === 'uploading');
+      const hasFailed = localRecordings.some(r => r.status === 'failed');
+      const hasUploaded = localRecordings.some(r => r.status === 'uploaded');
 
-    const hasUploading = localRecordings.some(r => r.status === 'uploading');
-    const hasFailed = localRecordings.some(r => r.status === 'failed');
-    const hasUploaded = localRecordings.some(r => r.status === 'uploaded');
-
-    if (hasUploading) {
-      setTranscriptionStatus('uploading');
-    } else if (hasFailed) {
-      setTranscriptionStatus('failed');
-    } else if (hasUploaded) {
-      setTranscriptionStatus('transcribing');
-    } else {
-      setTranscriptionStatus('idle');
-    }
+      if (hasUploading) return 'uploading';
+      if (hasFailed) return 'failed';
+      if (hasUploaded) return 'transcribing';
+      return 'idle';
+    })();
+    
+    // Only update if status actually changed
+    setTranscriptionStatus(prev => prev === newStatus ? prev : newStatus);
   }, [localRecordings]);
 
   // Timer for recording
@@ -180,7 +187,7 @@ export default function RabbitR1() {
 
     window.addEventListener('sideClick', handleSideClick);
     return () => window.removeEventListener('sideClick', handleSideClick);
-  }, [isRecording]);
+  }, [isRecording, toggleRecording]);
 
   // Sync pending recordings when coming online
   useEffect(() => {
@@ -255,13 +262,13 @@ export default function RabbitR1() {
     }
   };
 
-  const toggleRecording = () => {
+  const toggleRecording = useCallback(() => {
     if (isRecording) {
       stopRecording();
     } else {
       startRecording();
     }
-  };
+  }, [isRecording]);
 
   const saveRecordingLocally = async (audioBlob: Blob, duration: number) => {
     const recordingId = crypto.randomUUID();
