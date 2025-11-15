@@ -56,6 +56,8 @@ export default function RabbitR1() {
         await mistralProvider.load();
         const bitmap = mistralProvider.getBitmap();
         console.log('[RABBIT] Mistral bitmap loaded:', bitmap);
+        console.log('[RABBIT] First pixel:', bitmap[0][0]);
+        console.log('[RABBIT] Center pixel:', bitmap[8][8]);
         setMistralBitmap(bitmap);
 
         // Load microphone icon (we'll create a simple one programmatically)
@@ -451,14 +453,14 @@ export default function RabbitR1() {
         <div onClick={handleLEDClick} className="cursor-pointer">
           {isRecording ? (
             audioStream ? (
-              <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
+              <LEDPixelDisplay key="audio" isRecording={isRecording} audioStream={audioStream} />
             ) : microphoneBitmap ? (
-              <LEDPixelDisplay bitmap={microphoneBitmap} refreshRate={10} />
+              <LEDPixelDisplay key="mic" bitmap={microphoneBitmap} refreshRate={10} />
             ) : (
-              <LEDPixelDisplay isRecording={false} audioStream={null} />
+              <LEDPixelDisplay key="idle" isRecording={false} audioStream={null} />
             )
           ) : mistralBitmap ? (
-            <LEDPixelDisplay bitmap={mistralBitmap} refreshRate={1} />
+            <LEDPixelDisplay key="mistral" bitmap={mistralBitmap} refreshRate={1} />
           ) : (
             <div className="w-[224px] h-[224px] bg-black rounded-md flex items-center justify-center text-white text-sm">
               Lade...
