@@ -453,12 +453,12 @@ export default function RabbitR1() {
             audioStream ? (
               <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
             ) : microphoneBitmap ? (
-              <LEDPixelDisplay bitmap={microphoneBitmap} />
+              <LEDPixelDisplay bitmap={() => microphoneBitmap} refreshRate={10} />
             ) : (
               <LEDPixelDisplay isRecording={false} audioStream={null} />
             )
           ) : mistralBitmap ? (
-            <LEDPixelDisplay bitmap={mistralBitmap} />
+            <LEDPixelDisplay bitmap={() => mistralBitmap} refreshRate={1} />
           ) : (
             <div className="w-[224px] h-[224px] bg-black rounded-md flex items-center justify-center text-white text-sm">
               Lade...
