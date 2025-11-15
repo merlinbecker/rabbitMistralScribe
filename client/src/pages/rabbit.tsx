@@ -9,6 +9,8 @@ import { ImageBitmapProvider } from '@/lib/ledBitmap';
 import type { LEDBitmap } from '@/lib/ledBitmap';
 import { playRecordingStartSound, playRecordingStopSound } from '@/utils/audioFeedback';
 import type { Recording } from '@shared/schema';
+import { Button } from '@/components/ui/button';
+import { Github } from 'lucide-react';
 
 const MAX_RECORDING_TIME = 817; // 13:37 in seconds
 
@@ -28,6 +30,7 @@ export default function RabbitR1() {
   const [transcriptionStatus, setTranscriptionStatus] = useState<'idle' | 'uploading' | 'transcribing' | 'complete' | 'failed'>('idle');
   const [clickCount, setClickCount] = useState(0);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   
   const isOnline = useOnlineStatus();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -277,9 +280,10 @@ export default function RabbitR1() {
       if (!response.ok) {
         // Check if it's an auth error
         if (response.status === 401) {
-          // Not authenticated - keep in queue
+          // Not authenticated - show login prompt
           await indexedDB.updateRecording(localId, { status: 'queued' });
-          console.log('[RABBIT] Not authenticated - keeping recording in queue');
+          console.log('[RABBIT] Not authenticated - showing login prompt');
+          setShowLoginPrompt(true);
           return;
         }
         throw new Error('Upload failed');
@@ -396,8 +400,42 @@ export default function RabbitR1() {
     }
   };
 
+  const handleLogin = () => {
+    // Store return path and redirect to GitHub auth
+    sessionStorage.setItem('rabbitReturnPath', '/rabbit');
+    window.location.href = '/api/auth/github';
+  };
+
+  const handleCancelLogin = () => {
+    setShowLoginPrompt(false);
+  };
+
+  // Check if returning from auth
+  useEffect(() => {
+    const returnPath = sessionStorage.getItem('rabbitReturnPath');
+    if (returnPath === '/rabbit') {
+      sessionStorage.removeItem('rabbitReturnPath');
+      // Re-check authentication
+      const checkAuth = async () => {
+        try {
+          const response = await fetch('/api/auth/user', {
+            credentials: 'include',
+          });
+          setIsAuthenticated(response.ok);
+          if (response.ok) {
+            // Auth successful, trigger sync
+            syncPendingRecordings();
+          }
+        } catch {
+          setIsAuthenticated(false);
+        }
+      };
+      checkAuth();
+    }
+  }, []);
+
   return (
-    <div className="h-screen flex flex-col max-w-[240px] mx-auto bg-black">
+    <div className="h-screen flex flex-col max-w-[240px] mx-auto bg-black relative">
       {/* LED Display - main focal point */}
       <div className="flex-1 flex items-center justify-center p-4">
         <div onClick={handleLEDClick} className="cursor-pointer">
@@ -420,6 +458,38 @@ export default function RabbitR1() {
         recordingTime={recordingTime}
         transcriptionStatus={transcriptionStatus}
       />
+
+      {/* Login prompt overlay */}
+      {showLoginPrompt && (
+        <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-lg p-4 max-w-[200px] text-center">
+            <div className="mb-3">
+              <Github className="w-8 h-8 mx-auto text-white mb-2" />
+              <p className="text-white text-sm mb-1">Anmeldung erforderlich</p>
+              <p className="text-gray-400 text-xs">
+                Für Upload und Transkription
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Button
+                onClick={handleLogin}
+                className="w-full text-xs"
+                size="sm"
+              >
+                Mit GitHub anmelden
+              </Button>
+              <Button
+                onClick={handleCancelLogin}
+                variant="ghost"
+                className="w-full text-xs text-gray-400"
+                size="sm"
+              >
+                Später
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
