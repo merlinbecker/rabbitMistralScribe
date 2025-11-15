@@ -4,6 +4,7 @@ import { LEDPixelDisplay } from '@/components/LEDPixelDisplay';
 import { StatusBar } from '@/components/StatusBar';
 import { RecordingControl } from '@/components/RecordingControl';
 import { RecordingsList } from '@/components/RecordingsList';
+import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { useStatusNotification } from '@/hooks/use-status-notification';
 import { useRequireApiKey } from '@/hooks/useRequireApiKey';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
