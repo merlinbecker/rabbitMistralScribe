@@ -189,23 +189,31 @@ export default function RabbitR1() {
     return () => window.removeEventListener('sideClick', handleSideClick);
   }, [isRecording, toggleRecording]);
 
-  // Sync pending recordings when coming online
+  // Direct HTTP sync when coming online (no service worker on Rabbit R1)
   useEffect(() => {
     const handleOnline = async () => {
-      console.log('[RABBIT] Network came online - syncing pending recordings');
-      await syncPendingRecordings();
+      console.log('[RABBIT] Network came online - syncing pending recordings via HTTP');
+      if (isAuthenticated) {
+        await syncPendingRecordings();
+      } else {
+        // Show login prompt if there are pending recordings
+        const pending = await indexedDB.getAllRecordings();
+        if (pending.length > 0) {
+          setShowLoginPrompt(true);
+        }
+      }
     };
 
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, []);
+  }, [isAuthenticated]);
 
-  // Try to sync on mount if online
+  // Try to sync on mount if online and authenticated
   useEffect(() => {
-    if (isOnline) {
+    if (isOnline && isAuthenticated) {
       syncPendingRecordings();
     }
-  }, [isOnline]);
+  }, [isOnline, isAuthenticated]);
 
   const startRecording = async () => {
     try {
@@ -237,8 +245,19 @@ export default function RabbitR1() {
         stream.getTracks().forEach(track => track.stop());
         setAudioStream(null);
 
-        // Save locally
-        await saveRecordingLocally(audioBlob, recordingTime);
+        // Save locally first (offline capability)
+        const localId = await saveRecordingLocally(audioBlob, recordingTime);
+        
+        // Immediately try to upload if online
+        if (isOnline && localId) {
+          if (isAuthenticated) {
+            // Upload immediately
+            await uploadRecording(localId, audioBlob, recordingTime);
+          } else {
+            // Show login prompt when online but not authenticated
+            setShowLoginPrompt(true);
+          }
+        }
       };
 
       mediaRecorder.start(100);
@@ -252,7 +271,7 @@ export default function RabbitR1() {
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
@@ -270,7 +289,7 @@ export default function RabbitR1() {
     }
   }, [isRecording]);
 
-  const saveRecordingLocally = async (audioBlob: Blob, duration: number) => {
+  const saveRecordingLocally = async (audioBlob: Blob, duration: number): Promise<string | null> => {
     const recordingId = crypto.randomUUID();
 
     try {
@@ -286,12 +305,10 @@ export default function RabbitR1() {
       // Refresh UI
       await queryClient.invalidateQueries({ queryKey: ['local-recordings'] });
 
-      // Try to upload if online and authenticated
-      if (isOnline && isAuthenticated) {
-        uploadRecording(recordingId, audioBlob, duration);
-      }
+      return recordingId;
     } catch (error) {
       console.error('[RABBIT] Error saving recording:', error);
+      return null;
     }
   };
 
@@ -392,11 +409,22 @@ export default function RabbitR1() {
     try {
       const pendingRecordings = await indexedDB.getAllRecordings();
       
+      if (pendingRecordings.length === 0) {
+        return;
+      }
+
+      // Check authentication before syncing
+      if (!isAuthenticated) {
+        console.log('[RABBIT] Cannot sync - user not authenticated');
+        setShowLoginPrompt(true);
+        return;
+      }
+      
+      console.log(`[RABBIT] Syncing ${pendingRecordings.length} pending recording(s) via HTTP`);
+      
       for (const pending of pendingRecordings) {
         if (pending.status === 'queued' || pending.status === 'failed') {
-          if (isAuthenticated) {
-            await uploadRecording(pending.id, pending.audioBlob, pending.duration);
-          }
+          await uploadRecording(pending.id, pending.audioBlob, pending.duration);
         }
       }
     } catch (error) {
@@ -433,7 +461,11 @@ export default function RabbitR1() {
     }
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    // Check if there are pending recordings to sync
+    const pending = await indexedDB.getAllRecordings();
+    sessionStorage.setItem('rabbitPendingCount', pending.length.toString());
+    
     // Store return path and redirect to GitHub auth
     sessionStorage.setItem('rabbitReturnPath', '/rabbit');
     window.location.href = '/api/auth/github';
@@ -443,11 +475,14 @@ export default function RabbitR1() {
     setShowLoginPrompt(false);
   };
 
-  // Check if returning from auth
+  // Check if returning from auth and trigger HTTP sync
   useEffect(() => {
     const returnPath = sessionStorage.getItem('rabbitReturnPath');
     if (returnPath === '/rabbit') {
       sessionStorage.removeItem('rabbitReturnPath');
+      const pendingCount = parseInt(sessionStorage.getItem('rabbitPendingCount') || '0');
+      sessionStorage.removeItem('rabbitPendingCount');
+      
       // Re-check authentication
       const checkAuth = async () => {
         try {
@@ -456,8 +491,9 @@ export default function RabbitR1() {
           });
           setIsAuthenticated(response.ok);
           if (response.ok) {
-            // Auth successful, trigger sync
-            syncPendingRecordings();
+            console.log(`[RABBIT] Auth successful - syncing ${pendingCount} pending recording(s) via HTTP`);
+            // Auth successful, trigger direct HTTP sync (no service worker)
+            await syncPendingRecordings();
           }
         } catch {
           setIsAuthenticated(false);
