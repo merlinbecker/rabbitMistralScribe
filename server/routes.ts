@@ -30,6 +30,7 @@ const upload = multer({
 declare module 'express-session' {
   interface SessionData {
     userId?: string;
+    returnPath?: string;
   }
 }
 
@@ -84,6 +85,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/auth/github', (req, res) => {
     if (!authService.isConfigured()) {
       return res.status(500).send('GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.');
+    }
+
+    // Store return path from query parameter
+    const returnPath = req.query.returnPath as string;
+    if (returnPath) {
+      req.session.returnPath = returnPath;
     }
 
     const authUrl = authService.getAuthorizationUrl(req);
@@ -141,7 +148,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         });
 
-        res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
+        // Redirect to stored return path or default to home
+        const returnPath = req.session.returnPath || '/';
+        delete req.session.returnPath; // Clean up after use
+        
+        console.log('[AUTH] Redirecting to:', returnPath);
+        res.redirect(`${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] Session creation failed:', sessionError);
         return res.redirect('/?error=session_failed');

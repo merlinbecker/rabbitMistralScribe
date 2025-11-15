@@ -467,9 +467,9 @@ export default function RabbitR1() {
     const pending = await indexedDB.getAllRecordings();
     sessionStorage.setItem('rabbitPendingCount', pending.length.toString());
     
-    // Store return path and redirect to GitHub auth
+    // Pass return path as query parameter to GitHub auth
     sessionStorage.setItem('rabbitReturnPath', '/rabbit');
-    window.location.href = '/api/auth/github';
+    window.location.href = '/api/auth/github?returnPath=' + encodeURIComponent('/rabbit');
   };
 
   const handleCancelLogin = () => {
