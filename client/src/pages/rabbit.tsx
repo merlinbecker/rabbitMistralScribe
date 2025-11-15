@@ -22,6 +22,8 @@ const MAX_RECORDING_TIME = 817; // 13:37 in seconds
  * - Max recording time: 13:37
  */
 export default function RabbitR1() {
+  console.log('[RABBIT] Component mounted');
+  
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -42,20 +44,28 @@ export default function RabbitR1() {
   useEffect(() => {
     const loadBitmaps = async () => {
       try {
+        console.log('[RABBIT] Loading bitmaps...');
+        
         // Load Mistral logo
         const mistralProvider = new ImageBitmapProvider({
-          imageUrl: '/mistral.png',
+          imageUrl: `${window.location.origin}/mistral.png`,
           colorMode: 'full',
           brightness: 1.0
         });
+        
         await mistralProvider.load();
-        setMistralBitmap(mistralProvider.getBitmap());
+        const bitmap = mistralProvider.getBitmap();
+        console.log('[RABBIT] Mistral bitmap loaded:', bitmap);
+        setMistralBitmap(bitmap);
 
         // Load microphone icon (we'll create a simple one programmatically)
         const micBitmap = createMicrophoneBitmap();
+        console.log('[RABBIT] Microphone bitmap created');
         setMicrophoneBitmap(micBitmap);
       } catch (error) {
-        console.error('Failed to load bitmaps:', error);
+        console.error('[RABBIT] Failed to load bitmaps:', error);
+        // Fallback: create empty bitmap
+        setMistralBitmap(createMicrophoneBitmap());
       }
     };
 
@@ -435,18 +445,24 @@ export default function RabbitR1() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col max-w-[240px] mx-auto bg-black relative">
+    <div className="rabbit-view h-screen flex flex-col bg-black relative">
       {/* LED Display - main focal point */}
       <div className="flex-1 flex items-center justify-center p-4">
         <div onClick={handleLEDClick} className="cursor-pointer">
-          {isRecording && audioStream ? (
-            <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
-          ) : microphoneBitmap && isRecording ? (
-            <LEDPixelDisplay bitmap={microphoneBitmap} />
+          {isRecording ? (
+            audioStream ? (
+              <LEDPixelDisplay isRecording={isRecording} audioStream={audioStream} />
+            ) : microphoneBitmap ? (
+              <LEDPixelDisplay bitmap={microphoneBitmap} />
+            ) : (
+              <LEDPixelDisplay isRecording={false} audioStream={null} />
+            )
           ) : mistralBitmap ? (
             <LEDPixelDisplay bitmap={mistralBitmap} />
           ) : (
-            <LEDPixelDisplay isRecording={false} audioStream={null} />
+            <div className="w-[224px] h-[224px] bg-black rounded-md flex items-center justify-center text-white text-sm">
+              Lade...
+            </div>
           )}
         </div>
       </div>
