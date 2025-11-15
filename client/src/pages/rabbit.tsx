@@ -93,23 +93,60 @@ export default function RabbitR1() {
     let isMounted = true;
     
     const checkAuth = async () => {
-      if (!isOnline) return;
+      if (!isOnline) {
+        console.log('[RABBIT] 🔌 Offline - skipping auth check');
+        return;
+      }
+      
+      console.log('[RABBIT] ========================================');
+      console.log('[RABBIT] 🔍 Checking authentication...');
+      console.log('[RABBIT] Current cookies:', document.cookie);
+      console.log('[RABBIT] Cookie count:', document.cookie ? document.cookie.split(';').length : 0);
+      console.log('[RABBIT] ========================================');
       
       try {
         const response = await fetch('/api/auth/user', {
           credentials: 'include',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
         });
+        
+        console.log('[RABBIT] ========================================');
+        console.log('[RABBIT] Auth check response:', response.status, response.statusText);
+        console.log('[RABBIT] Response headers:');
+        response.headers.forEach((value, key) => {
+          console.log(`[RABBIT]   ${key}: ${value}`);
+        });
+        console.log('[RABBIT] ========================================');
+        
         if (isMounted) {
           const wasAuthenticated = isAuthenticated;
-          setIsAuthenticated(response.ok);
+          const nowAuthenticated = response.ok;
+          
+          console.log('[RABBIT] ========================================');
+          console.log('[RABBIT] Auth state change:');
+          console.log('[RABBIT]   Was authenticated:', wasAuthenticated);
+          console.log('[RABBIT]   Now authenticated:', nowAuthenticated);
+          console.log('[RABBIT] ========================================');
+          
+          setIsAuthenticated(nowAuthenticated);
           
           // If just authenticated, sync recordings
-          if (response.ok && !wasAuthenticated) {
-            console.log('[RABBIT] Just authenticated - syncing recordings');
+          if (nowAuthenticated && !wasAuthenticated) {
+            console.log('[RABBIT] ========================================');
+            console.log('[RABBIT] 🎉 Just authenticated - syncing recordings');
+            console.log('[RABBIT] ========================================');
             await syncPendingRecordings();
+          } else if (!nowAuthenticated && wasAuthenticated) {
+            console.log('[RABBIT] ⚠️ Lost authentication');
           }
         }
-      } catch {
+      } catch (error) {
+        console.error('[RABBIT] ========================================');
+        console.error('[RABBIT] ❌ Auth check error:', error);
+        console.error('[RABBIT] ========================================');
         if (isMounted) {
           setIsAuthenticated(false);
         }
@@ -120,36 +157,66 @@ export default function RabbitR1() {
     const params = new URLSearchParams(window.location.search);
     
     console.log('[RABBIT] ========================================');
-    console.log('[RABBIT] Component mounted');
+    console.log('[RABBIT] 🚀 Component mounted');
     console.log('[RABBIT] URL:', window.location.href);
     console.log('[RABBIT] Search params:', params.toString());
     console.log('[RABBIT] authenticated param:', params.get('authenticated'));
-    console.log('[RABBIT] token param:', params.get('token')?.substring(0, 10) + '...');
-    console.log('[RABBIT] Cookies:', document.cookie);
+    console.log('[RABBIT] token param:', params.get('token') ? params.get('token')?.substring(0, 10) + '...' : 'none');
+    console.log('[RABBIT] Initial cookies:', document.cookie);
+    console.log('[RABBIT] Cookie names:', document.cookie ? document.cookie.split(';').map(c => c.trim().split('=')[0]).join(', ') : 'none');
     console.log('[RABBIT] ========================================');
     
     if (params.get('authenticated') === 'true') {
       console.log('[RABBIT] ========================================');
       console.log('[RABBIT] 🔄 Returning from GitHub auth');
-      console.log('[RABBIT] Waiting for session to be ready...');
+      console.log('[RABBIT] Checking for session cookie...');
+      
+      // Check for session cookie
+      const hasSessionCookie = document.cookie.includes('connect.sid');
+      console.log('[RABBIT] Session cookie present:', hasSessionCookie);
+      
+      if (!hasSessionCookie) {
+        console.warn('[RABBIT] ⚠️ WARNING: No session cookie found after auth!');
+        console.warn('[RABBIT] This may cause authentication to fail.');
+      }
+      
       console.log('[RABBIT] ========================================');
       
       // Clean URL immediately to prevent re-triggering
       window.history.replaceState({}, '', '/rabbit');
       console.log('[RABBIT] ✅ URL cleaned');
       
-      // Wait a bit for session to be fully established, then check auth
-      setTimeout(() => {
+      // Wait for session to be fully established
+      // Try multiple times with increasing delays
+      let attempt = 0;
+      const maxAttempts = 5;
+      
+      const tryCheckAuth = () => {
+        attempt++;
+        console.log('[RABBIT] ========================================');
+        console.log('[RABBIT] ⏰ Auth check attempt', attempt, 'of', maxAttempts);
+        console.log('[RABBIT] Cookies now:', document.cookie);
+        console.log('[RABBIT] ========================================');
+        
         if (isMounted) {
-          console.log('[RABBIT] ========================================');
-          console.log('[RABBIT] ⏰ Timeout completed - checking auth now');
-          console.log('[RABBIT] Cookies after timeout:', document.cookie);
-          console.log('[RABBIT] ========================================');
-          checkAuth();
-        } else {
-          console.log('[RABBIT] ⚠️ Component unmounted before timeout - skipping auth check');
+          checkAuth().then(() => {
+            // If auth check failed and we haven't exhausted attempts, try again
+            if (!isAuthenticated && attempt < maxAttempts) {
+              console.log('[RABBIT] Auth check failed, will retry in', 500 * attempt, 'ms');
+              setTimeout(tryCheckAuth, 500 * attempt);
+            } else if (!isAuthenticated) {
+              console.error('[RABBIT] ========================================');
+              console.error('[RABBIT] ❌ Authentication failed after', maxAttempts, 'attempts');
+              console.error('[RABBIT] Showing login prompt again');
+              console.error('[RABBIT] ========================================');
+              setShowLoginPrompt(true);
+            }
+          });
         }
-      }, 500);
+      };
+      
+      // Start first attempt after short delay
+      setTimeout(tryCheckAuth, 200);
     } else {
       console.log('[RABBIT] ========================================');
       console.log('[RABBIT] 🔄 Normal mount - checking auth immediately');

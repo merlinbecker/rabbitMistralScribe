@@ -124,36 +124,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        // WICHTIG: Session regenerieren um neue Cookie-Settings zu bekommen
+        // Store return path before regenerating session
         const returnPath = req.session.returnPath || '/';
         
+        console.log('[AUTH] ========================================');
+        console.log('[AUTH] 🔄 Starting session creation');
+        console.log('[AUTH] Return path:', returnPath);
+        console.log('[AUTH] User ID:', result.user.id);
+        console.log('[AUTH] Old SessionID:', req.sessionID);
+        console.log('[AUTH] ========================================');
+        
+        // Regenerate session to get fresh session ID and prevent session fixation
         await new Promise<void>((resolve, reject) => {
           req.session.regenerate((err) => {
             if (err) {
-              console.error('[AUTH] Failed to regenerate session:', err);
+              console.error('[AUTH] ❌ Failed to regenerate session:', err);
               reject(err);
             } else {
-              console.log('[AUTH] Session regenerated successfully');
+              console.log('[AUTH] ✅ Session regenerated successfully');
+              console.log('[AUTH] New SessionID:', req.sessionID);
               resolve();
             }
           });
         });
         
-        // Jetzt neue Session mit korrekten Cookie-Settings befüllen
-        await authService.createSession(req, result.user.id);
+        // Set userId in the new session
+        req.session.userId = result.user.id;
+        req.session.returnPath = returnPath;
+        
+        // Explicitly save the session and wait for completion
+        await new Promise<void>((resolve, reject) => {
+          req.session.save((err) => {
+            if (err) {
+              console.error('[AUTH] ❌ Failed to save session:', err);
+              reject(err);
+            } else {
+              console.log('[AUTH] ✅ Session saved successfully');
+              resolve();
+            }
+          });
+        });
 
         console.log('[AUTH] ========================================');
-        console.log('[AUTH] Session created successfully');
+        console.log('[AUTH] ✅ Session created and saved successfully');
         console.log('[AUTH] SessionID:', req.sessionID);
         console.log('[AUTH] Session userId:', req.session.userId);
-        console.log('[AUTH] Cookie settings:', {
-          httpOnly: req.session.cookie.httpOnly,
-          secure: req.session.cookie.secure,
-          sameSite: req.session.cookie.sameSite,
-          domain: req.session.cookie.domain,
-          path: req.session.cookie.path,
-          maxAge: req.session.cookie.maxAge
-        });
+        console.log('[AUTH] Session data:', JSON.stringify({
+          userId: req.session.userId,
+          returnPath: req.session.returnPath,
+          cookie: {
+            httpOnly: req.session.cookie.httpOnly,
+            secure: req.session.cookie.secure,
+            sameSite: req.session.cookie.sameSite,
+            domain: req.session.cookie.domain,
+            path: req.session.cookie.path,
+            maxAge: req.session.cookie.maxAge
+          }
+        }, null, 2));
+        console.log('[AUTH] Response headers will include Set-Cookie for:', req.sessionID);
         console.log('[AUTH] ========================================');
 
         console.log('[AUTH] ========================================');
@@ -161,9 +189,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('[AUTH] Full redirect URL:', `${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
         console.log('[AUTH] ========================================');
 
+        // Important: The redirect will include the Set-Cookie header with the session ID
         res.redirect(`${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
-        console.error('[AUTH] Session creation failed:', sessionError);
+        console.error('[AUTH] ========================================');
+        console.error('[AUTH] ❌ Session creation failed:', sessionError);
+        console.error('[AUTH] Error stack:', sessionError instanceof Error ? sessionError.stack : 'No stack');
+        console.error('[AUTH] ========================================');
         return res.redirect('/?error=session_failed');
       }
     } catch (error) {
@@ -186,22 +218,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/auth/user', async (req, res) => {
     console.log('[AUTH] ========================================');
-    console.log('[AUTH] /api/auth/user called');
+    console.log('[AUTH] 👤 /api/auth/user called');
     console.log('[AUTH] Timestamp:', new Date().toISOString());
+    console.log('[AUTH] Request from:', req.headers['user-agent']?.substring(0, 50));
+    console.log('[AUTH] Referer:', req.headers.referer);
+    console.log('[AUTH] ========================================');
+    
+    console.log('[AUTH] 🍪 Cookie Analysis:');
+    console.log('[AUTH] Raw cookie header:', req.headers.cookie);
+    if (req.headers.cookie) {
+      const cookies = req.headers.cookie.split(';').map(c => c.trim());
+      console.log('[AUTH] Cookie count:', cookies.length);
+      cookies.forEach(cookie => {
+        const [name] = cookie.split('=');
+        console.log('[AUTH]   Cookie:', name);
+      });
+      const hasSessionCookie = cookies.some(c => c.startsWith('connect.sid='));
+      console.log('[AUTH] Has connect.sid cookie:', hasSessionCookie);
+    } else {
+      console.log('[AUTH] ⚠️ No cookies in request!');
+    }
+    console.log('[AUTH] ========================================');
+    
+    console.log('[AUTH] 📋 Session Info:');
     console.log('[AUTH] Session ID:', req.sessionID);
-    console.log('[AUTH] Cookies received:', req.headers.cookie);
-    console.log('[AUTH] Session data:', JSON.stringify(req.session, null, 2));
+    console.log('[AUTH] Session exists:', !!req.session);
+    console.log('[AUTH] Session userId:', req.session?.userId);
+    console.log('[AUTH] Full session:', JSON.stringify(req.session, null, 2));
+    console.log('[AUTH] ========================================');
+    
+    console.log('[AUTH] 🔑 Authorization:');
     console.log('[AUTH] Authorization header:', req.headers.authorization);
     console.log('[AUTH] ========================================');
 
     const userId = authService.getUserIdFromRequest(req);
     console.log('[AUTH] ========================================');
-    console.log('[AUTH] getUserIdFromRequest result:', userId);
+    console.log('[AUTH] 🔍 getUserIdFromRequest result:', userId);
     console.log('[AUTH] ========================================');
 
     if (!userId) {
       console.log('[AUTH] ========================================');
       console.log('[AUTH] ❌ No userId found in session or token');
+      console.log('[AUTH] Session was:', req.session);
       console.log('[AUTH] Returning 401 Unauthorized');
       console.log('[AUTH] ========================================');
       return res.status(401).json({ error: 'Unauthorized' });
@@ -214,7 +272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const safeUser = await authService.getSafeUser(userId);
 
     console.log('[AUTH] ========================================');
-    console.log('[AUTH] getSafeUser result:', safeUser);
+    console.log('[AUTH] getSafeUser result:', safeUser ? 'User found' : 'User not found');
     console.log('[AUTH] ========================================');
 
     if (!safeUser) {
@@ -226,7 +284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     console.log('[AUTH] ========================================');
-    console.log('[AUTH] ✅ User found and returning data');
+    console.log('[AUTH] ✅ User authenticated successfully');
     console.log('[AUTH] User:', { id: safeUser.id, username: safeUser.username });
     console.log('[AUTH] ========================================');
 
