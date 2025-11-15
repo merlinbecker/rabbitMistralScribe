@@ -100,7 +100,14 @@ export default function RabbitR1() {
           credentials: 'include',
         });
         if (isMounted) {
+          const wasAuthenticated = isAuthenticated;
           setIsAuthenticated(response.ok);
+          
+          // If just authenticated, sync recordings
+          if (response.ok && !wasAuthenticated) {
+            console.log('[RABBIT] Just authenticated - syncing recordings');
+            await syncPendingRecordings();
+          }
         }
       } catch {
         if (isMounted) {
@@ -109,7 +116,18 @@ export default function RabbitR1() {
       }
     };
 
+    // Check on mount
     checkAuth();
+    
+    // Check if returning from auth
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('authenticated') === 'true') {
+      console.log('[RABBIT] Returning from GitHub auth');
+      // Clean URL
+      window.history.replaceState({}, '', '/rabbit');
+      // Recheck auth
+      checkAuth();
+    }
     
     return () => {
       isMounted = false;
@@ -476,33 +494,7 @@ export default function RabbitR1() {
     setShowLoginPrompt(false);
   };
 
-  // Check if returning from auth and trigger HTTP sync
-  useEffect(() => {
-    const returnPath = sessionStorage.getItem('rabbitReturnPath');
-    if (returnPath === '/rabbit') {
-      sessionStorage.removeItem('rabbitReturnPath');
-      const pendingCount = parseInt(sessionStorage.getItem('rabbitPendingCount') || '0');
-      sessionStorage.removeItem('rabbitPendingCount');
-      
-      // Re-check authentication
-      const checkAuth = async () => {
-        try {
-          const response = await fetch('/api/auth/user', {
-            credentials: 'include',
-          });
-          setIsAuthenticated(response.ok);
-          if (response.ok) {
-            console.log(`[RABBIT] Auth successful - syncing ${pendingCount} pending recording(s) via HTTP`);
-            // Auth successful, trigger direct HTTP sync (no service worker)
-            await syncPendingRecordings();
-          }
-        } catch {
-          setIsAuthenticated(false);
-        }
-      };
-      checkAuth();
-    }
-  }, []);
+  
 
   return (
     <div className="rabbit-view flex flex-col bg-black relative">
