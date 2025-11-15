@@ -13,24 +13,63 @@ import NotFound from "@/pages/not-found";
 import type { User } from "@shared/schema";
 
 function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
-  const { data: user, isLoading, error } = useQuery<User>({
+  console.log('[PROTECTED_ROUTE] ========================================');
+  console.log('[PROTECTED_ROUTE] Component mounting/rendering');
+  console.log('[PROTECTED_ROUTE] Current URL:', window.location.href);
+  console.log('[PROTECTED_ROUTE] Cookies:', document.cookie);
+  console.log('[PROTECTED_ROUTE] ========================================');
+
+  const { data: user, isLoading, error, status, fetchStatus } = useQuery<User>({
     queryKey: ['/api/auth/user'],
     queryFn: async () => {
+      console.log('[PROTECTED_ROUTE] ========================================');
+      console.log('[PROTECTED_ROUTE] 🔄 Starting auth check');
+      console.log('[PROTECTED_ROUTE] Cookies before fetch:', document.cookie);
+      console.log('[PROTECTED_ROUTE] ========================================');
+
       const response = await fetch('/api/auth/user', {
         credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+        }
       });
+
+      console.log('[PROTECTED_ROUTE] ========================================');
+      console.log('[PROTECTED_ROUTE] 📥 Response received');
+      console.log('[PROTECTED_ROUTE] Status:', response.status);
+      console.log('[PROTECTED_ROUTE] Status Text:', response.statusText);
+      console.log('[PROTECTED_ROUTE] Headers:', Object.fromEntries(response.headers.entries()));
+      console.log('[PROTECTED_ROUTE] ========================================');
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROTECTED_ROUTE] ❌ Response not OK');
+        console.error('[PROTECTED_ROUTE] Error text:', errorText);
         throw new Error('Not authenticated');
       }
+
+      const userData = await response.json();
+      console.log('[PROTECTED_ROUTE] ========================================');
+      console.log('[PROTECTED_ROUTE] ✅ User data received:', userData);
+      console.log('[PROTECTED_ROUTE] ========================================');
       
-      return response.json();
+      return userData;
     },
     retry: false,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
+  console.log('[PROTECTED_ROUTE] ========================================');
+  console.log('[PROTECTED_ROUTE] Query state:');
+  console.log('[PROTECTED_ROUTE] - isLoading:', isLoading);
+  console.log('[PROTECTED_ROUTE] - status:', status);
+  console.log('[PROTECTED_ROUTE] - fetchStatus:', fetchStatus);
+  console.log('[PROTECTED_ROUTE] - error:', error);
+  console.log('[PROTECTED_ROUTE] - user:', user);
+  console.log('[PROTECTED_ROUTE] ========================================');
+
   if (isLoading) {
+    console.log('[PROTECTED_ROUTE] 🔄 Still loading, showing spinner');
     return (
       <div className="h-screen flex items-center justify-center bg-background max-w-[240px] mx-auto">
         <div className="text-center space-y-2">
@@ -42,11 +81,19 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
   }
 
   if (error || !user) {
-    console.log('[PROTECTED_ROUTE] Auth check failed:', { error, user });
+    console.log('[PROTECTED_ROUTE] ========================================');
+    console.log('[PROTECTED_ROUTE] ❌ AUTH CHECK FAILED - REDIRECTING TO /auth');
+    console.log('[PROTECTED_ROUTE] Error:', error);
+    console.log('[PROTECTED_ROUTE] User:', user);
+    console.log('[PROTECTED_ROUTE] Error instance:', error instanceof Error ? error.message : 'Not an Error instance');
+    console.log('[PROTECTED_ROUTE] ========================================');
     return <Redirect to="/auth" />;
   }
 
-  console.log('[PROTECTED_ROUTE] User authenticated:', user.username);
+  console.log('[PROTECTED_ROUTE] ========================================');
+  console.log('[PROTECTED_ROUTE] ✅ User authenticated, rendering component');
+  console.log('[PROTECTED_ROUTE] User:', user.username);
+  console.log('[PROTECTED_ROUTE] ========================================');
   return <Component />;
 }
 

@@ -126,12 +126,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('[AUTH] Session created successfully');
         console.log('[AUTH] SessionID:', req.sessionID);
         console.log('[AUTH] Session userId:', req.session.userId);
+        console.log('[AUTH] Session returnPath:', req.session.returnPath);
         console.log('[AUTH] Cookie settings:', {
           httpOnly: req.session.cookie.httpOnly,
           secure: req.session.cookie.secure,
           sameSite: req.session.cookie.sameSite,
           domain: req.session.cookie.domain,
-          path: req.session.cookie.path
+          path: req.session.cookie.path,
+          maxAge: req.session.cookie.maxAge
         });
         console.log('[AUTH] ========================================');
 
@@ -142,7 +144,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.error('[AUTH] ❌ Session save before redirect failed:', err);
               reject(err);
             } else {
+              console.log('[AUTH] ========================================');
               console.log('[AUTH] ✅ Session saved before redirect');
+              console.log('[AUTH] Session after save:', JSON.stringify(req.session, null, 2));
+              console.log('[AUTH] ========================================');
               resolve();
             }
           });
@@ -152,7 +157,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const returnPath = req.session.returnPath || '/';
         delete req.session.returnPath; // Clean up after use
         
-        console.log('[AUTH] Redirecting to:', returnPath);
+        console.log('[AUTH] ========================================');
+        console.log('[AUTH] 🔀 Redirecting to:', returnPath);
+        console.log('[AUTH] Full redirect URL:', `${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
+        console.log('[AUTH] ========================================');
+        
         res.redirect(`${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] Session creation failed:', sessionError);
@@ -177,24 +186,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get('/api/auth/user', async (req, res) => {
+    console.log('[AUTH] ========================================');
     console.log('[AUTH] /api/auth/user called');
+    console.log('[AUTH] Timestamp:', new Date().toISOString());
     console.log('[AUTH] Session ID:', req.sessionID);
     console.log('[AUTH] Cookies received:', req.headers.cookie);
-    console.log('[AUTH] Session data:', req.session);
+    console.log('[AUTH] Session data:', JSON.stringify(req.session, null, 2));
+    console.log('[AUTH] Authorization header:', req.headers.authorization);
+    console.log('[AUTH] ========================================');
 
     const userId = authService.getUserIdFromRequest(req);
+    console.log('[AUTH] ========================================');
+    console.log('[AUTH] getUserIdFromRequest result:', userId);
+    console.log('[AUTH] ========================================');
+    
     if (!userId) {
-      console.log('[AUTH] No userId found in session or token');
+      console.log('[AUTH] ========================================');
+      console.log('[AUTH] ❌ No userId found in session or token');
+      console.log('[AUTH] Returning 401 Unauthorized');
+      console.log('[AUTH] ========================================');
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    console.log('[AUTH] ========================================');
+    console.log('[AUTH] 🔍 Looking up user:', userId);
+    console.log('[AUTH] ========================================');
+
     const safeUser = await authService.getSafeUser(userId);
+    
+    console.log('[AUTH] ========================================');
+    console.log('[AUTH] getSafeUser result:', safeUser);
+    console.log('[AUTH] ========================================');
+    
     if (!safeUser) {
-      console.log('[AUTH] User not found for userId:', userId);
+      console.log('[AUTH] ========================================');
+      console.log('[AUTH] ❌ User not found for userId:', userId);
+      console.log('[AUTH] Returning 404 Not Found');
+      console.log('[AUTH] ========================================');
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('[AUTH] User found:', { id: safeUser.id, username: safeUser.username });
+    console.log('[AUTH] ========================================');
+    console.log('[AUTH] ✅ User found and returning data');
+    console.log('[AUTH] User:', { id: safeUser.id, username: safeUser.username });
+    console.log('[AUTH] ========================================');
 
     // Retry failed recordings on login
     const userSettings = await storage.getUserSettings(userId);

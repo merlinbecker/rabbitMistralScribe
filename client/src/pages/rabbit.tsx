@@ -118,21 +118,42 @@ export default function RabbitR1() {
 
     // Check if returning from auth
     const params = new URLSearchParams(window.location.search);
+    
+    console.log('[RABBIT] ========================================');
+    console.log('[RABBIT] Component mounted');
+    console.log('[RABBIT] URL:', window.location.href);
+    console.log('[RABBIT] Search params:', params.toString());
+    console.log('[RABBIT] authenticated param:', params.get('authenticated'));
+    console.log('[RABBIT] token param:', params.get('token')?.substring(0, 10) + '...');
+    console.log('[RABBIT] Cookies:', document.cookie);
+    console.log('[RABBIT] ========================================');
+    
     if (params.get('authenticated') === 'true') {
-      console.log('[RABBIT] Returning from GitHub auth - waiting for session to be ready');
+      console.log('[RABBIT] ========================================');
+      console.log('[RABBIT] 🔄 Returning from GitHub auth');
+      console.log('[RABBIT] Waiting for session to be ready...');
+      console.log('[RABBIT] ========================================');
       
       // Clean URL immediately to prevent re-triggering
       window.history.replaceState({}, '', '/rabbit');
+      console.log('[RABBIT] ✅ URL cleaned');
       
       // Wait a bit for session to be fully established, then check auth
       setTimeout(() => {
         if (isMounted) {
-          console.log('[RABBIT] Checking auth after OAuth return');
+          console.log('[RABBIT] ========================================');
+          console.log('[RABBIT] ⏰ Timeout completed - checking auth now');
+          console.log('[RABBIT] Cookies after timeout:', document.cookie);
+          console.log('[RABBIT] ========================================');
           checkAuth();
+        } else {
+          console.log('[RABBIT] ⚠️ Component unmounted before timeout - skipping auth check');
         }
       }, 500);
     } else {
-      // Normal mount - check auth immediately
+      console.log('[RABBIT] ========================================');
+      console.log('[RABBIT] 🔄 Normal mount - checking auth immediately');
+      console.log('[RABBIT] ========================================');
       checkAuth();
     }
     
