@@ -67,7 +67,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Session configuration with Replit Database Store
   const isProduction = process.env.NODE_ENV === 'production';
-  
+
   app.use(
     session({
       store: new ReplitSessionStore(databaseService),
@@ -124,7 +124,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        await authService.createSession(req, result.user.id);
+        // Use the new method to create session and ensure cookie is sent
+        await authService.createSessionWithCookie(req, res, result.user.id);
 
         console.log('[AUTH] ========================================');
         console.log('[AUTH] Session created successfully');
@@ -141,34 +142,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         console.log('[AUTH] ========================================');
 
-        // Wait for session to be saved before redirecting
-        await new Promise<void>((resolve, reject) => {
-          req.session.save((err) => {
-            if (err) {
-              console.error('[AUTH] ❌ Session save before redirect failed:', err);
-              reject(err);
-            } else {
-              console.log('[AUTH] ========================================');
-              console.log('[AUTH] ✅ Session saved before redirect');
-              console.log('[AUTH] Session after save:', JSON.stringify(req.session, null, 2));
-              console.log('[AUTH] Session ID:', req.sessionID);
-              console.log('[AUTH] Response headers will include Set-Cookie');
-              console.log('[AUTH] ========================================');
-              resolve();
-            }
-          });
-        });
-
         // Redirect to stored return path or default to home
         const returnPath = req.session.returnPath || '/';
         delete req.session.returnPath; // Clean up after use
-        
+
         console.log('[AUTH] ========================================');
         console.log('[AUTH] 🔀 Redirecting to:', returnPath);
         console.log('[AUTH] Full redirect URL:', `${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
-        console.log('[AUTH] Set-Cookie header:', res.getHeader('Set-Cookie'));
+        // Note: res.getHeader('Set-Cookie') might not be immediately available after session.save() due to async nature.
+        // The crucial part is that session.save() was called and the cookie *will* be sent by the browser.
+        console.log('[AUTH] Set-Cookie header (might be undefined if not yet processed by response stream):', res.getHeader('Set-Cookie'));
         console.log('[AUTH] ========================================');
-        
+
         res.redirect(`${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] Session creation failed:', sessionError);
@@ -206,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[AUTH] ========================================');
     console.log('[AUTH] getUserIdFromRequest result:', userId);
     console.log('[AUTH] ========================================');
-    
+
     if (!userId) {
       console.log('[AUTH] ========================================');
       console.log('[AUTH] ❌ No userId found in session or token');
@@ -220,11 +205,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[AUTH] ========================================');
 
     const safeUser = await authService.getSafeUser(userId);
-    
+
     console.log('[AUTH] ========================================');
     console.log('[AUTH] getSafeUser result:', safeUser);
     console.log('[AUTH] ========================================');
-    
+
     if (!safeUser) {
       console.log('[AUTH] ========================================');
       console.log('[AUTH] ❌ User not found for userId:', userId);
