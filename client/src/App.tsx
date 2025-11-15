@@ -15,7 +15,18 @@ import type { User } from "@shared/schema";
 function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
   const { data: user, isLoading, error } = useQuery<User>({
     queryKey: ['/api/auth/user'],
-    retry: 1,
+    queryFn: async () => {
+      const response = await fetch('/api/auth/user', {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Not authenticated');
+      }
+      
+      return response.json();
+    },
+    retry: false,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
@@ -31,9 +42,11 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
   }
 
   if (error || !user) {
+    console.log('[PROTECTED_ROUTE] Auth check failed:', { error, user });
     return <Redirect to="/auth" />;
   }
 
+  console.log('[PROTECTED_ROUTE] User authenticated:', user.username);
   return <Component />;
 }
 
