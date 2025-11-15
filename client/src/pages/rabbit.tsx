@@ -42,6 +42,8 @@ export default function RabbitR1() {
 
   // Load LED bitmaps on mount
   useEffect(() => {
+    let isMounted = true;
+    
     const loadBitmaps = async () => {
       try {
         console.log('[RABBIT] Loading bitmaps...');
@@ -54,10 +56,14 @@ export default function RabbitR1() {
         });
         
         await mistralProvider.load();
+        
+        if (!isMounted) return;
+        
         const bitmap = mistralProvider.getBitmap();
         console.log('[RABBIT] Mistral bitmap loaded:', bitmap);
         console.log('[RABBIT] First pixel:', bitmap[0][0]);
         console.log('[RABBIT] Center pixel:', bitmap[8][8]);
+        console.log('[RABBIT] Setting state with bitmap');
         setMistralBitmap(bitmap);
 
         // Load microphone icon (we'll create a simple one programmatically)
@@ -67,11 +73,17 @@ export default function RabbitR1() {
       } catch (error) {
         console.error('[RABBIT] Failed to load bitmaps:', error);
         // Fallback: create empty bitmap
-        setMistralBitmap(createMicrophoneBitmap());
+        if (isMounted) {
+          setMistralBitmap(createMicrophoneBitmap());
+        }
       }
     };
 
     loadBitmaps();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Check authentication status (non-blocking)
@@ -451,21 +463,29 @@ export default function RabbitR1() {
       {/* LED Display - main focal point */}
       <div className="flex-1 flex items-center justify-center p-4">
         <div onClick={handleLEDClick} className="cursor-pointer">
-          {isRecording ? (
-            audioStream ? (
-              <LEDPixelDisplay key="audio" isRecording={isRecording} audioStream={audioStream} />
-            ) : microphoneBitmap ? (
-              <LEDPixelDisplay key="mic" bitmap={microphoneBitmap} refreshRate={10} />
-            ) : (
-              <LEDPixelDisplay key="idle" isRecording={false} audioStream={null} />
-            )
-          ) : mistralBitmap ? (
-            <LEDPixelDisplay key="mistral" bitmap={mistralBitmap} refreshRate={1} />
-          ) : (
-            <div className="w-[224px] h-[224px] bg-black rounded-md flex items-center justify-center text-white text-sm">
-              Lade...
-            </div>
-          )}
+          {(() => {
+            console.log('[RABBIT] Render - isRecording:', isRecording, 'mistralBitmap:', !!mistralBitmap);
+            
+            if (isRecording) {
+              if (audioStream) {
+                return <LEDPixelDisplay key="audio" isRecording={isRecording} audioStream={audioStream} />;
+              } else if (microphoneBitmap) {
+                return <LEDPixelDisplay key="mic" bitmap={microphoneBitmap} refreshRate={10} />;
+              } else {
+                return <LEDPixelDisplay key="idle" isRecording={false} audioStream={null} />;
+              }
+            } else if (mistralBitmap) {
+              console.log('[RABBIT] Rendering Mistral bitmap');
+              return <LEDPixelDisplay key="mistral" bitmap={mistralBitmap} />;
+            } else {
+              console.log('[RABBIT] Showing loading...');
+              return (
+                <div className="w-[224px] h-[224px] bg-black rounded-md flex items-center justify-center text-white text-sm">
+                  Lade...
+                </div>
+              );
+            }
+          })()}
         </div>
       </div>
 
