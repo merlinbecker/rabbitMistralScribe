@@ -124,22 +124,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        // WICHTIG: Zuerst alte Session (mit falschen Cookie-Settings) zerstören
+        // WICHTIG: Session regenerieren um neue Cookie-Settings zu bekommen
         const returnPath = req.session.returnPath || '/';
         
         await new Promise<void>((resolve, reject) => {
-          req.session.destroy((err) => {
+          req.session.regenerate((err) => {
             if (err) {
-              console.error('[AUTH] Failed to destroy old session:', err);
+              console.error('[AUTH] Failed to regenerate session:', err);
               reject(err);
             } else {
-              console.log('[AUTH] Old session destroyed successfully');
+              console.log('[AUTH] Session regenerated successfully');
               resolve();
             }
           });
         });
         
-        // Jetzt neue Session mit korrekten Cookie-Settings erstellen
+        // Jetzt neue Session mit korrekten Cookie-Settings befüllen
         await authService.createSession(req, result.user.id);
 
         console.log('[AUTH] ========================================');
