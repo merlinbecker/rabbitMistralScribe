@@ -77,7 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cookie: {
         httpOnly: true,
         secure: isProduction, // Only secure in production
-        sameSite: 'lax',
+        sameSite: isProduction ? 'none' : 'lax', // 'none' needed for cross-site OAuth in production
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         domain: undefined, // Let browser set domain automatically
       },
