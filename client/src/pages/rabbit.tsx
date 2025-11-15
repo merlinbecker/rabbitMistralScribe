@@ -33,6 +33,7 @@ export default function RabbitR1() {
   const [clickCount, setClickCount] = useState(0);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [bitmapLoadedTimestamp, setBitmapLoadedTimestamp] = useState<number>(0);
   
   const isOnline = useOnlineStatus();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -65,6 +66,7 @@ export default function RabbitR1() {
         console.log('[RABBIT] Center pixel:', bitmap[8][8]);
         console.log('[RABBIT] Setting state with bitmap');
         setMistralBitmap(bitmap);
+        setBitmapLoadedTimestamp(Date.now());
 
         // Load microphone icon (we'll create a simple one programmatically)
         const micBitmap = createMicrophoneBitmap();
@@ -476,7 +478,7 @@ export default function RabbitR1() {
               }
             } else if (mistralBitmap) {
               console.log('[RABBIT] Rendering Mistral bitmap');
-              return <LEDPixelDisplay key="mistral" bitmap={mistralBitmap} />;
+              return <LEDPixelDisplay key={`mistral-${bitmapLoadedTimestamp}`} bitmap={mistralBitmap} />;
             } else {
               console.log('[RABBIT] Showing loading...');
               return (
