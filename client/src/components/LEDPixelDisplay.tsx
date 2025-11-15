@@ -183,7 +183,7 @@ export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
 
   return (
     <div 
-      className={`w-full aspect-square max-w-[224px] mx-auto p-1 bg-black rounded-md ${className}`}
+      className={`w-full aspect-square mx-auto p-1 bg-black rounded-md ${className}`}
       data-testid="led-display"
     >
       <div 

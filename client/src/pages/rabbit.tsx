@@ -461,10 +461,10 @@ export default function RabbitR1() {
   }, []);
 
   return (
-    <div className="rabbit-view h-screen flex flex-col bg-black relative">
+    <div className="rabbit-view flex flex-col bg-black relative">
       {/* LED Display - main focal point */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        <div onClick={handleLEDClick} className="cursor-pointer">
+      <div className="flex-1 flex items-center justify-center p-2">
+        <div onClick={handleLEDClick} className="cursor-pointer w-full max-w-[220px]">
           {(() => {
             console.log('[RABBIT] Render - isRecording:', isRecording, 'mistralBitmap:', !!mistralBitmap);
             
