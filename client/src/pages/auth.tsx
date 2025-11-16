@@ -92,7 +92,7 @@ export default function Auth() {
   }, [checkAuthStatus, setLocation]); // Added setLocation to dependency array
 
   const handleGitHubLogin = () => {
-    window.location.href = '/api/auth/github';
+    window.location.href = '/api/auth/github?returnPath=' + encodeURIComponent('/');
   };
 
   return (

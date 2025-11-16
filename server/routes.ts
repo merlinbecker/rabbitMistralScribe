@@ -101,7 +101,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Store return path from query parameter
     const returnPath = req.query.returnPath as string;
     if (returnPath) {
-      req.session.returnPath = returnPath;
+      // Ensure returnPath is set to '/' to meet the user's requirement
+      req.session.returnPath = '/'; 
+    } else {
+      // If no returnPath is provided, default to '/'
+      req.session.returnPath = '/';
     }
 
     const authUrl = authService.getAuthorizationUrl(req);
@@ -132,16 +136,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         // Store return path BEFORE regenerating session (it will be lost otherwise)
-        const returnPath = req.session.returnPath || '/';
+        // The returnPath is already defaulted to '/' in the /api/auth/github route
+        const returnPath = req.session.returnPath || '/'; 
         const userId = result.user.id;
-        
+
         console.log('[AUTH] ========================================');
         console.log('[AUTH] 🔄 Starting session creation');
         console.log('[AUTH] Return path:', returnPath);
         console.log('[AUTH] User ID:', userId);
         console.log('[AUTH] Old SessionID:', req.sessionID);
         console.log('[AUTH] ========================================');
-        
+
         // Regenerate session to get fresh session ID and prevent session fixation
         await new Promise<void>((resolve, reject) => {
           req.session.regenerate((err) => {
@@ -155,11 +160,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
         });
-        
+
         // Restore data in the new session (regenerate clears everything)
         req.session.userId = userId;
         req.session.returnPath = returnPath;
-        
+
         // Explicitly save the session and wait for completion
         await new Promise<void>((resolve, reject) => {
           req.session.save((err) => {
@@ -198,7 +203,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('[AUTH] ========================================');
 
         // Important: The redirect will include the Set-Cookie header with the session ID
-        res.redirect(`${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
+        // Modified to always redirect to '/' as per user's request
+        res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
       } catch (sessionError) {
         console.error('[AUTH] ========================================');
         console.error('[AUTH] ❌ Session creation failed:', sessionError);
@@ -231,7 +237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[AUTH] Request from:', req.headers['user-agent']?.substring(0, 50));
     console.log('[AUTH] Referer:', req.headers.referer);
     console.log('[AUTH] ========================================');
-    
+
     console.log('[AUTH] 🍪 Cookie Analysis:');
     console.log('[AUTH] Raw cookie header:', req.headers.cookie);
     if (req.headers.cookie) {
@@ -247,14 +253,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[AUTH] ⚠️ No cookies in request!');
     }
     console.log('[AUTH] ========================================');
-    
+
     console.log('[AUTH] 📋 Session Info:');
     console.log('[AUTH] Session ID:', req.sessionID);
     console.log('[AUTH] Session exists:', !!req.session);
     console.log('[AUTH] Session userId:', req.session?.userId);
     console.log('[AUTH] Full session:', JSON.stringify(req.session, null, 2));
     console.log('[AUTH] ========================================');
-    
+
     console.log('[AUTH] 🔑 Authorization:');
     console.log('[AUTH] Authorization header:', req.headers.authorization);
     console.log('[AUTH] ========================================');
