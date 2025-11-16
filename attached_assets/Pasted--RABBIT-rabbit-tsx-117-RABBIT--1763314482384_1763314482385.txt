@@ -1,0 +1,238 @@
+[RABBIT] ========================================
+rabbit.tsx:117 [RABBIT] ========================================
+rabbit.tsx:118 [RABBIT] Auth check response: 200 OK
+rabbit.tsx:119 [RABBIT] Response headers:
+rabbit.tsx:121 [RABBIT]   content-length: 158
+rabbit.tsx:121 [RABBIT]   content-type: application/json; charset=utf-8
+rabbit.tsx:121 [RABBIT]   date: Sun, 16 Nov 2025 17:34:13 GMT
+rabbit.tsx:121 [RABBIT]   etag: W/"9e-ZKj7NZMgIUcKL2v7qwXPSK4ptBg"
+rabbit.tsx:121 [RABBIT]   replit-cluster: kirk
+rabbit.tsx:121 [RABBIT]   x-powered-by: Express
+rabbit.tsx:121 [RABBIT]   x-robots-tag: none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex, none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex
+rabbit.tsx:123 [RABBIT] ========================================
+rabbit.tsx:129 [RABBIT] ========================================
+rabbit.tsx:130 [RABBIT] Auth state change:
+rabbit.tsx:131 [RABBIT]   Was authenticated: false
+rabbit.tsx:132 [RABBIT]   Now authenticated: true
+rabbit.tsx:133 [RABBIT] ========================================
+rabbit.tsx:139 [RABBIT] ========================================
+rabbit.tsx:140 [RABBIT] 🎉 Just authenticated - syncing recordings
+rabbit.tsx:141 [RABBIT] ========================================
+rabbit.tsx:25 [RABBIT] Component mounted
+rabbit.tsx:602 [RABBIT] Render - isRecording: false mistralBitmap: true
+rabbit.tsx:613 [RABBIT] Rendering Mistral bitmap
+rabbit.tsx:534 [RABBIT] Cannot sync - user not authenticated
+rabbit.tsx:206 [RABBIT] Auth check failed, will retry in 1000 ms
+rabbit.tsx:197 [RABBIT] ========================================
+rabbit.tsx:198 [RABBIT] ⏰ Auth check attempt 3 of 5
+rabbit.tsx:199 [RABBIT] Cookies now: 
+rabbit.tsx:200 [RABBIT] ========================================
+rabbit.tsx:101 [RABBIT] ========================================
+rabbit.tsx:102 [RABBIT] 🔍 Checking authentication...
+rabbit.tsx:103 [RABBIT] Current cookies: 
+rabbit.tsx:104 [RABBIT] Cookie count: 0
+rabbit.tsx:105 [RABBIT] ========================================
+rabbit.tsx:117 [RABBIT] ========================================
+rabbit.tsx:118 [RABBIT] Auth check response: 200 OK
+rabbit.tsx:119 [RABBIT] Response headers:
+rabbit.tsx:121 [RABBIT]   content-length: 158
+rabbit.tsx:121 [RABBIT]   content-type: application/json; charset=utf-8
+rabbit.tsx:121 [RABBIT]   date: Sun, 16 Nov 2025 17:34:16 GMT
+rabbit.tsx:121 [RABBIT]   etag: W/"9e-ZKj7NZMgIUcKL2v7qwXPSK4ptBg"
+rabbit.tsx:121 [RABBIT]   replit-cluster: kirk
+rabbit.tsx:121 [RABBIT]   x-powered-by: Express
+rabbit.tsx:121 [RABBIT]   x-robots-tag: none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex, none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex
+rabbit.tsx:123 [RABBIT] ========================================
+rabbit.tsx:129 [RABBIT] ========================================
+rabbit.tsx:130 [RABBIT] Auth state change:
+rabbit.tsx:131 [RABBIT]   Was authenticated: false
+rabbit.tsx:132 [RABBIT]   Now authenticated: true
+rabbit.tsx:133 [RABBIT] ========================================
+rabbit.tsx:139 [RABBIT] ========================================
+rabbit.tsx:140 [RABBIT] 🎉 Just authenticated - syncing recordings
+rabbit.tsx:141 [RABBIT] ========================================
+rabbit.tsx:534 [RABBIT] Cannot sync - user not authenticated
+rabbit.tsx:206 [RABBIT] Auth check failed, will retry in 1500 ms
+rabbit.tsx:197 [RABBIT] ========================================
+rabbit.tsx:198 [RABBIT] ⏰ Auth check attempt 4 of 5
+rabbit.tsx:199 [RABBIT] Cookies now: 
+rabbit.tsx:200 [RABBIT] ========================================
+rabbit.tsx:101 [RABBIT] ========================================
+rabbit.tsx:102 [RABBIT] 🔍 Checking authentication...
+rabbit.tsx:103 [RABBIT] Current cookies: 
+rabbit.tsx:104 [RABBIT] Cookie count: 0
+rabbit.tsx:105 [RABBIT] ========================================
+rabbit.tsx:25 [RABBIT] Component mounted
+rabbit.tsx:602 [RABBIT] Render - isRecording: false mistralBitmap: true
+rabbit.tsx:613 [RABBIT] Rendering Mistral bitmap
+rabbit.tsx:25 [RABBIT] Component mounted
+rabbit.tsx:602 [RABBIT] Render - isRecording: false mistralBitmap: true
+rabbit.tsx:613 [RABBIT] Rendering Mistral bitmap
+rabbit.tsx:117 [RABBIT] ========================================
+rabbit.tsx:118 [RABBIT] Auth check response: 200 OK
+rabbit.tsx:119 [RABBIT] Response headers:
+rabbit.tsx:121 [RABBIT]   content-length: 158
+rabbit.tsx:121 [RABBIT]   content-type: application/json; charset=utf-8
+rabbit.tsx:121 [RABBIT]   date: Sun, 16 Nov 2025 17:34:19 GMT
+rabbit.tsx:121 [RABBIT]   etag: W/"9e-ZKj7NZMgIUcKL2v7qwXPSK4ptBg"
+rabbit.tsx:121 [RABBIT]   replit-cluster: kirk
+rabbit.tsx:121 [RABBIT]   x-powered-by: Express
+rabbit.tsx:121 [RABBIT]   x-robots-tag: none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex, none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex
+rabbit.tsx:123 [RABBIT] ========================================
+rabbit.tsx:129 [RABBIT] ========================================
+rabbit.tsx:130 [RABBIT] Auth state change:
+rabbit.tsx:131 [RABBIT]   Was authenticated: false
+rabbit.tsx:132 [RABBIT]   Now authenticated: true
+rabbit.tsx:133 [RABBIT] ========================================
+rabbit.tsx:139 [RABBIT] ========================================
+rabbit.tsx:140 [RABBIT] 🎉 Just authenticated - syncing recordings
+rabbit.tsx:141 [RABBIT] ========================================
+rabbit.tsx:534 [RABBIT] Cannot sync - user not authenticated
+rabbit.tsx:206 [RABBIT] Auth check failed, will retry in 2000 ms
+rabbit.tsx:197 [RABBIT] ========================================
+rabbit.tsx:198 [RABBIT] ⏰ Auth check attempt 5 of 5
+rabbit.tsx:199 [RABBIT] Cookies now: 
+rabbit.tsx:200 [RABBIT] ========================================
+rabbit.tsx:101 [RABBIT] ========================================
+rabbit.tsx:102 [RABBIT] 🔍 Checking authentication...
+rabbit.tsx:103 [RABBIT] Current cookies: 
+rabbit.tsx:104 [RABBIT] Cookie count: 0
+rabbit.tsx:105 [RABBIT] ========================================
+rabbit.tsx:117 [RABBIT] ========================================
+rabbit.tsx:118 [RABBIT] Auth check response: 200 OK
+rabbit.tsx:119 [RABBIT] Response headers:
+rabbit.tsx:121 [RABBIT]   content-length: 158
+rabbit.tsx:121 [RABBIT]   content-type: application/json; charset=utf-8
+rabbit.tsx:121 [RABBIT]   date: Sun, 16 Nov 2025 17:34:23 GMT
+rabbit.tsx:121 [RABBIT]   etag: W/"9e-ZKj7NZMgIUcKL2v7qwXPSK4ptBg"
+rabbit.tsx:121 [RABBIT]   replit-cluster: kirk
+rabbit.tsx:121 [RABBIT]   x-powered-by: Express
+rabbit.tsx:121 [RABBIT]   x-robots-tag: none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex, none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex
+rabbit.tsx:123 [RABBIT] ========================================
+rabbit.tsx:129 [RABBIT] ========================================
+rabbit.tsx:130 [RABBIT] Auth state change:
+rabbit.tsx:131 [RABBIT]   Was authenticated: false
+rabbit.tsx:132 [RABBIT]   Now authenticated: true
+rabbit.tsx:133 [RABBIT] ========================================
+rabbit.tsx:139 [RABBIT] ========================================
+rabbit.tsx:140 [RABBIT] 🎉 Just authenticated - syncing recordings
+rabbit.tsx:141 [RABBIT] ========================================
+rabbit.tsx:534 [RABBIT] Cannot sync - user not authenticated
+rabbit.tsx:209  [RABBIT] ========================================
+overrideMethod @ hook.js:608
+(anonymous) @ rabbit.tsx:209
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:220
+commitHookEffectListMount @ react-dom.development.js:23189
+commitPassiveMountOnFiber @ react-dom.development.js:24965
+commitPassiveMountEffects_complete @ react-dom.development.js:24930
+commitPassiveMountEffects_begin @ react-dom.development.js:24917
+commitPassiveMountEffects @ react-dom.development.js:24905
+flushPassiveEffectsImpl @ react-dom.development.js:27078
+flushPassiveEffects @ react-dom.development.js:27023
+performSyncWorkOnRoot @ react-dom.development.js:26115
+flushSyncCallbacks @ react-dom.development.js:12042
+commitRootImpl @ react-dom.development.js:26998
+commitRoot @ react-dom.development.js:26721
+finishConcurrentRender @ react-dom.development.js:26020
+performConcurrentWorkOnRoot @ react-dom.development.js:25848
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533
+rabbit.tsx:210  [RABBIT] ❌ Authentication failed after 5 attempts
+overrideMethod @ hook.js:608
+(anonymous) @ rabbit.tsx:210
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:220
+commitHookEffectListMount @ react-dom.development.js:23189
+commitPassiveMountOnFiber @ react-dom.development.js:24965
+commitPassiveMountEffects_complete @ react-dom.development.js:24930
+commitPassiveMountEffects_begin @ react-dom.development.js:24917
+commitPassiveMountEffects @ react-dom.development.js:24905
+flushPassiveEffectsImpl @ react-dom.development.js:27078
+flushPassiveEffects @ react-dom.development.js:27023
+performSyncWorkOnRoot @ react-dom.development.js:26115
+flushSyncCallbacks @ react-dom.development.js:12042
+commitRootImpl @ react-dom.development.js:26998
+commitRoot @ react-dom.development.js:26721
+finishConcurrentRender @ react-dom.development.js:26020
+performConcurrentWorkOnRoot @ react-dom.development.js:25848
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533
+rabbit.tsx:211  [RABBIT] Showing login prompt again
+overrideMethod @ hook.js:608
+(anonymous) @ rabbit.tsx:211
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:207
+Promise.then
+tryCheckAuth @ rabbit.tsx:203
+setTimeout
+(anonymous) @ rabbit.tsx:220
+commitHookEffectListMount @ react-dom.development.js:23189
+commitPassiveMountOnFiber @ react-dom.development.js:24965
+commitPassiveMountEffects_complete @ react-dom.development.js:24930
+commitPassiveMountEffects_begin @ react-dom.development.js:24917
+commitPassiveMountEffects @ react-dom.development.js:24905
+flushPassiveEffectsImpl @ react-dom.development.js:27078
+flushPassiveEffects @ react-dom.development.js:27023
+performSyncWorkOnRoot @ react-dom.development.js:26115
+flushSyncCallbacks @ react-dom.development.js:12042
+commitRootImpl @ react-dom.development.js:26998
+commitRoot @ react-dom.development.js:26721
+finishConcurrentRender @ react-dom.development.js:26020
+performConcurrentWorkOnRoot @ react-dom.development.js:25848
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533
+rabbit.tsx:212  [RABBIT] ========================================
