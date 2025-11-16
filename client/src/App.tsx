@@ -40,7 +40,7 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
       console.log('[PROTECTED_ROUTE] Status Text:', response.statusText);
       console.log('[PROTECTED_ROUTE] Headers:', Object.fromEntries(response.headers.entries()));
       console.log('[PROTECTED_ROUTE] ========================================');
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[PROTECTED_ROUTE] ❌ Response not OK');
@@ -52,7 +52,7 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
       console.log('[PROTECTED_ROUTE] ========================================');
       console.log('[PROTECTED_ROUTE] ✅ User data received:', userData);
       console.log('[PROTECTED_ROUTE] ========================================');
-      
+
       return userData;
     },
     retry: false,
@@ -100,17 +100,15 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
 function Router() {
   return (
     <Switch>
-      <Route path="/rabbit" component={RabbitR1} />
-      <Route path="/auth" component={Auth} />
-      <Route path="/settings">
-        {() => <ProtectedRoute component={Settings} />}
-      </Route>
+      <Route path="/" component={RabbitR1} />
+      <Route path="/old" component={Home} />
       <Route path="/recordings">
         {() => <ProtectedRoute component={Recordings} />}
       </Route>
-      <Route path="/">
-        {() => <ProtectedRoute component={Home} />}
+      <Route path="/settings">
+        {() => <ProtectedRoute component={Settings} />}
       </Route>
+      <Route path="/auth" component={Auth} />
       <Route component={NotFound} />
     </Switch>
   );

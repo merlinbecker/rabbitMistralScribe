@@ -584,6 +584,15 @@ export default function Home() {
       <div className="flex-1 overflow-y-auto">
         <div className="p-3 space-y-4">
           <div className="flex items-center justify-end gap-1 mb-2">
+            <Link href="/">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+              >
+                Zurück zur Hauptseite
+              </Button>
+            </Link>
             <Link href="/recordings">
               <Button
                 variant="ghost"

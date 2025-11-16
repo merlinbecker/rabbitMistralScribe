@@ -583,8 +583,8 @@ export default function RabbitR1() {
     sessionStorage.setItem('rabbitPendingCount', pending.length.toString());
     
     // Pass return path as query parameter to GitHub auth
-    sessionStorage.setItem('rabbitReturnPath', '/rabbit');
-    window.location.href = '/api/auth/github?returnPath=' + encodeURIComponent('/rabbit');
+    sessionStorage.setItem('rabbitReturnPath', '/');
+    window.location.href = '/api/auth/github?returnPath=' + encodeURIComponent('/');
   };
 
   const handleCancelLogin = () => {
