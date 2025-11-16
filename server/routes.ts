@@ -188,13 +188,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('[AUTH] ========================================');
 
         console.log('[AUTH] ========================================');
-        console.log('[AUTH] 🔀 Redirecting to:', returnPath);
-        console.log('[AUTH] Full redirect URL:', `${returnPath}?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
+        console.log('[AUTH] 🔀 Redirecting to: /');
+        console.log('[AUTH] Session cookie will be included in response');
         console.log('[AUTH] ========================================');
 
-        // Important: The redirect will include the Set-Cookie header with the session ID
-        // Modified to always redirect to '/' as per user's request
-        res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
+        // Redirect to home with authenticated flag
+        // Session cookie is automatically sent with the redirect
+        res.redirect('/?authenticated=true');
       } catch (sessionError) {
         console.error('[AUTH] ========================================');
         console.error('[AUTH] ❌ Session creation failed:', sessionError);

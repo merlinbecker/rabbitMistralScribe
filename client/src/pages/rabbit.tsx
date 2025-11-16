@@ -134,19 +134,15 @@ export default function RabbitR1() {
 
     // Check if returning from auth
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
     
-    if (params.get('authenticated') === 'true' && token) {
-      console.log('[RABBIT] 🔄 Returning from GitHub auth with token');
-      
-      // Store token in sessionStorage for this session
-      sessionStorage.setItem('rabbit_user_id', token);
+    if (params.get('authenticated') === 'true') {
+      console.log('[RABBIT] 🔄 Returning from GitHub auth - session cookie should be set');
       
       // Clean URL immediately
       window.history.replaceState({}, '', '/');
-      console.log('[RABBIT] ✅ URL cleaned, token stored');
+      console.log('[RABBIT] ✅ URL cleaned');
       
-      // Mark as authenticated immediately
+      // Mark as authenticated immediately (session cookie is set by server)
       setIsAuthenticated(true);
       
       // Sync pending recordings
@@ -154,14 +150,9 @@ export default function RabbitR1() {
         console.error('[RABBIT] Failed to sync recordings:', err)
       );
     } else {
-      // Check stored token
-      const storedToken = sessionStorage.getItem('rabbit_user_id');
-      if (storedToken) {
-        console.log('[RABBIT] Found stored token, checking validity...');
-        checkAuth();
-      } else {
-        console.log('[RABBIT] No stored token, user not authenticated');
-      }
+      // Check if we have a valid session
+      console.log('[RABBIT] No auth parameters, checking session...');
+      checkAuth();
     }
     
     return () => {
@@ -368,15 +359,6 @@ export default function RabbitR1() {
 
   const uploadRecording = async (localId: string, audioBlob: Blob, duration: number) => {
     try {
-      // Check if we have a token
-      const userId = sessionStorage.getItem('rabbit_user_id');
-      if (!userId) {
-        console.log('[RABBIT] No token available for upload');
-        await indexedDB.updateRecording(localId, { status: 'queued' });
-        setShowLoginPrompt(true);
-        return;
-      }
-
       // Mark as uploading
       await indexedDB.updateRecording(localId, { status: 'uploading' });
 
@@ -386,21 +368,17 @@ export default function RabbitR1() {
 
       const response = await fetch('/api/recordings', {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Authorization': `Bearer ${userId}` // Use Bearer token instead of cookie
-        },
+        credentials: 'include', // Use session cookie for authentication
         body: formData,
       });
 
       if (!response.ok) {
         // Check if it's an auth error
         if (response.status === 401) {
-          // Not authenticated - clear token and show login prompt
-          sessionStorage.removeItem('rabbit_user_id');
+          // Not authenticated - show login prompt
           setIsAuthenticated(false);
           await indexedDB.updateRecording(localId, { status: 'queued' });
-          console.log('[RABBIT] Not authenticated - showing login prompt');
+          console.log('[RABBIT] 401 Unauthorized - redirecting to login');
           setShowLoginPrompt(true);
           return;
         }
@@ -433,16 +411,9 @@ export default function RabbitR1() {
 
     const checkStatus = async () => {
       try {
-        const userId = sessionStorage.getItem('rabbit_user_id');
-        const headers: HeadersInit = {};
-        if (userId) {
-          headers['Authorization'] = `Bearer ${userId}`;
-        }
-
         const response = await fetch('/api/recordings', {
           method: 'GET',
-          credentials: 'include',
-          headers,
+          credentials: 'include', // Use session cookie for authentication
         });
         
         if (!response.ok) return;
@@ -537,12 +508,8 @@ export default function RabbitR1() {
     }
   };
 
-  const handleLogin = async () => {
-    // Check if there are pending recordings to sync
-    const pending = await indexedDB.getAllRecordings();
-    sessionStorage.setItem('rabbitPendingCount', pending.length.toString());
-    
-    // Redirect to GitHub OAuth
+  const handleLogin = () => {
+    // Redirect to GitHub OAuth - session will be created on callback
     window.location.href = '/api/auth/github';
   };
 

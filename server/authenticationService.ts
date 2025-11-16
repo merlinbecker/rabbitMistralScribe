@@ -288,24 +288,14 @@ export class AuthenticationService {
   }
 
   /**
-   * Extract user ID from request (session or Bearer token)
+   * Extract user ID from request session
    * 
    * @param req Express request object
    * @returns User ID or null if not authenticated
    */
   getUserIdFromRequest(req: Request): string | null {
-    // Check session first
-    if (req.session?.userId) {
-      return req.session.userId;
-    }
-
-    // Fallback to Bearer token
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      return authHeader.substring(7);
-    }
-
-    return null;
+    // Only use session - no Bearer token fallback
+    return req.session?.userId || null;
   }
 
   /**
