@@ -106,7 +106,8 @@ export default function RabbitR1() {
       
       try {
         const response = await fetch('/api/auth/user', {
-          credentials: 'include',
+          method: 'GET',
+          credentials: 'include', // Critical: Include cookies in cross-origin requests
           headers: {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
@@ -437,7 +438,7 @@ export default function RabbitR1() {
 
       const response = await fetch('/api/recordings', {
         method: 'POST',
-        credentials: 'include',
+        credentials: 'include', // Critical: Include session cookie
         body: formData,
       });
 
@@ -480,7 +481,8 @@ export default function RabbitR1() {
     const checkStatus = async () => {
       try {
         const response = await fetch('/api/recordings', {
-          credentials: 'include',
+          method: 'GET',
+          credentials: 'include', // Critical: Include session cookie
         });
         
         if (!response.ok) return;

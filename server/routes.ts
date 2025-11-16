@@ -66,7 +66,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Session configuration with Replit Database Store
-  const isProduction = process.env.NODE_ENV === 'production';
+  // Replit uses HTTPS even in development, so we need to detect that
+  const isHttps = (req: Request) => {
+    return req.protocol === 'https' || 
+           req.get('x-forwarded-proto') === 'https' ||
+           req.get('x-forwarded-ssl') === 'on';
+  };
 
   app.use(
     session({
@@ -76,8 +81,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        secure: isProduction, // Only secure in production
-        sameSite: isProduction ? 'none' : 'lax', // 'none' needed for cross-site OAuth in production
+        // Always use secure cookies on HTTPS (including Replit dev URLs)
+        secure: true,
+        // Use 'none' for cross-site OAuth (GitHub redirect)
+        sameSite: 'none',
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         domain: undefined, // Let browser set domain automatically
       },
@@ -124,13 +131,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        // Store return path before regenerating session
+        // Store return path BEFORE regenerating session (it will be lost otherwise)
         const returnPath = req.session.returnPath || '/';
+        const userId = result.user.id;
         
         console.log('[AUTH] ========================================');
         console.log('[AUTH] 🔄 Starting session creation');
         console.log('[AUTH] Return path:', returnPath);
-        console.log('[AUTH] User ID:', result.user.id);
+        console.log('[AUTH] User ID:', userId);
         console.log('[AUTH] Old SessionID:', req.sessionID);
         console.log('[AUTH] ========================================');
         
@@ -148,8 +156,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         });
         
-        // Set userId in the new session
-        req.session.userId = result.user.id;
+        // Restore data in the new session (regenerate clears everything)
+        req.session.userId = userId;
         req.session.returnPath = returnPath;
         
         // Explicitly save the session and wait for completion
