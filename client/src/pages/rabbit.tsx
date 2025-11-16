@@ -184,7 +184,7 @@ export default function RabbitR1() {
       console.log('[RABBIT] ========================================');
       
       // Clean URL immediately to prevent re-triggering
-      window.history.replaceState({}, '', '/rabbit');
+      window.history.replaceState({}, '', '/');
       console.log('[RABBIT] ✅ URL cleaned');
       
       // Wait for session to be fully established
