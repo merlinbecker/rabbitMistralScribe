@@ -412,7 +412,9 @@ export default function Home() {
           // console.log('[UPLOAD] Sending POST request to /api/recordings');
           const response = await fetch('/api/recordings', {
             method: 'POST',
-            credentials: 'include',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+            },
             body: formData,
           });
 
@@ -472,7 +474,11 @@ export default function Home() {
       pollCount++;
 
       try {
-        const updatedRecordings = await fetch('/api/recordings', { credentials: 'include' }).then(r => r.json());
+        const updatedRecordings = await fetch('/api/recordings', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          }
+        }).then(r => r.json());
         const updated = updatedRecordings.find((r: Recording) => r.id === recordingId);
 
         if (!updated) {
@@ -572,6 +578,21 @@ export default function Home() {
       console.error('[SYNC] Error syncing pending recordings:', error);
     }
   };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+      });
+
+      localStorage.removeItem('auth_token');
+      queryClient.clear();
+      window.location.href = '/auth';
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
 
   // Get only the most recent recording for the home view
   const latestRecording = recordings.length > 0 ? [recordings[0]] : [];

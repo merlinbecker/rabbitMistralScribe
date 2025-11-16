@@ -98,13 +98,20 @@ export default function RabbitR1() {
         return;
       }
       
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        console.log('[RABBIT] No auth token found');
+        setIsAuthenticated(false);
+        return;
+      }
+      
       console.log('[RABBIT] 🔍 Checking authentication...');
       
       try {
         const response = await fetch('/api/auth/user', {
           method: 'GET',
-          credentials: 'include',
           headers: {
+            'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
           }
@@ -113,6 +120,10 @@ export default function RabbitR1() {
         if (isMounted) {
           const wasAuthenticated = isAuthenticated;
           const nowAuthenticated = response.ok;
+          
+          if (!nowAuthenticated) {
+            localStorage.removeItem('auth_token');
+          }
           
           console.log('[RABBIT] Auth state:', { wasAuthenticated, nowAuthenticated });
           
@@ -128,21 +139,26 @@ export default function RabbitR1() {
         console.error('[RABBIT] ❌ Auth check error:', error);
         if (isMounted) {
           setIsAuthenticated(false);
+          localStorage.removeItem('auth_token');
         }
       }
     };
 
     // Check if returning from auth
     const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
     
-    if (params.get('authenticated') === 'true') {
-      console.log('[RABBIT] 🔄 Returning from GitHub auth - session cookie should be set');
+    if (token) {
+      console.log('[RABBIT] 🔄 Returning from GitHub auth - saving token');
+      
+      // Save token to localStorage
+      localStorage.setItem('auth_token', token);
       
       // Clean URL immediately
       window.history.replaceState({}, '', '/');
-      console.log('[RABBIT] ✅ URL cleaned');
+      console.log('[RABBIT] ✅ Token saved, URL cleaned');
       
-      // Mark as authenticated immediately (session cookie is set by server)
+      // Mark as authenticated immediately
       setIsAuthenticated(true);
       
       // Sync pending recordings
@@ -150,8 +166,8 @@ export default function RabbitR1() {
         console.error('[RABBIT] Failed to sync recordings:', err)
       );
     } else {
-      // Check if we have a valid session
-      console.log('[RABBIT] No auth parameters, checking session...');
+      // Check if we have a valid token
+      console.log('[RABBIT] No token in URL, checking localStorage...');
       checkAuth();
     }
     
@@ -359,6 +375,14 @@ export default function RabbitR1() {
 
   const uploadRecording = async (localId: string, audioBlob: Blob, duration: number) => {
     try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        setIsAuthenticated(false);
+        await indexedDB.updateRecording(localId, { status: 'queued' });
+        setShowLoginPrompt(true);
+        return;
+      }
+
       // Mark as uploading
       await indexedDB.updateRecording(localId, { status: 'uploading' });
 
@@ -368,7 +392,9 @@ export default function RabbitR1() {
 
       const response = await fetch('/api/recordings', {
         method: 'POST',
-        credentials: 'include', // Use session cookie for authentication
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         body: formData,
       });
 
@@ -376,6 +402,7 @@ export default function RabbitR1() {
         // Check if it's an auth error
         if (response.status === 401) {
           // Not authenticated - show login prompt
+          localStorage.removeItem('auth_token');
           setIsAuthenticated(false);
           await indexedDB.updateRecording(localId, { status: 'queued' });
           console.log('[RABBIT] 401 Unauthorized - redirecting to login');
@@ -411,12 +438,17 @@ export default function RabbitR1() {
 
     const checkStatus = async () => {
       try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) return false;
+
         const response = await fetch('/api/recordings', {
           method: 'GET',
-          credentials: 'include', // Use session cookie for authentication
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
         });
         
-        if (!response.ok) return;
+        if (!response.ok) return false;
 
         const recordings: Recording[] = await response.json();
         const recording = recordings.find(r => r.id === serverId);

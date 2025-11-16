@@ -42,18 +42,13 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
       console.log('[PROTECTED_ROUTE] ========================================');
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[PROTECTED_ROUTE] ❌ Response not OK');
-        console.error('[PROTECTED_ROUTE] Error text:', errorText);
-        throw new Error('Not authenticated');
+        if (response.status === 401) {
+          localStorage.removeItem('auth_token');
+        }
+        throw new Error('Unauthorized');
       }
 
-      const userData = await response.json();
-      console.log('[PROTECTED_ROUTE] ========================================');
-      console.log('[PROTECTED_ROUTE] ✅ User data received:', userData);
-      console.log('[PROTECTED_ROUTE] ========================================');
-
-      return userData;
+      return await response.json();
     },
     retry: false,
     staleTime: 5 * 60 * 1000, // 5 minutes

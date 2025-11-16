@@ -8,7 +8,7 @@ export function getStoredToken(): string | null {
   try {
     const token = localStorage.getItem(TOKEN_KEY);
     const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-    
+
     if (token && expiry) {
       const expiryTime = parseInt(expiry, 10);
       if (Date.now() < expiryTime) {
@@ -56,18 +56,18 @@ export async function apiRequest(
   data?: unknown | undefined,
 ): Promise<Response> {
   const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
-  
+
   // Add stored token to headers if available
   const token = getStoredToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
+
   const res = await fetch(url, {
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
+    credentials: "omit", // Changed from "include" to "omit" to remove cookie usage
   });
 
   await throwIfResNotOk(res);
@@ -80,8 +80,17 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
+    const url = queryKey.join("/") as string; // Construct URL from queryKey
+    const token = getStoredToken(); // Get the stored token
+
+    const headers: HeadersInit = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`; // Add Authorization header
+    }
+
+    const res = await fetch(url, {
+      headers,
+      credentials: "omit", // Ensure no cookies are sent
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
