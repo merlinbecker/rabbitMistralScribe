@@ -155,7 +155,7 @@ export default function RabbitR1() {
       localStorage.setItem('auth_token', token);
       
       // Clean URL immediately
-      window.history.replaceState({}, '', '/');
+      window.history.replaceState({}, '', '/rabbit');
       console.log('[RABBIT] ✅ Token saved, URL cleaned');
       
       // Mark as authenticated immediately
@@ -204,6 +204,33 @@ export default function RabbitR1() {
     // Only update if status actually changed
     setTranscriptionStatus(prev => prev === newStatus ? prev : newStatus);
   }, [localRecordings]);
+
+  // Auto-sync pending recordings when conditions are met
+  useEffect(() => {
+    // Only sync if:
+    // 1. Device is online
+    // 2. No recording is currently in progress
+    // 3. There are pending recordings that need to be synced
+    const hasPendingRecordings = localRecordings.some(
+      r => r.status === 'queued' || r.status === 'failed'
+    );
+
+    if (isOnline && !isRecording && hasPendingRecordings) {
+      console.log('[RABBIT] 🔄 Auto-sync conditions met - attempting to sync pending recordings');
+      
+      // Check if we're authenticated
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        console.log('[RABBIT] ⚠️ No auth token - showing login prompt');
+        setShowLoginPrompt(true);
+      } else if (isAuthenticated) {
+        console.log('[RABBIT] ✅ Authenticated - syncing now');
+        syncPendingRecordings().catch(err => 
+          console.error('[RABBIT] Auto-sync failed:', err)
+        );
+      }
+    }
+  }, [isOnline, isRecording, localRecordings, isAuthenticated]);
 
   // Define toggleRecording first with useCallback
   const toggleRecording = useCallback(() => {
@@ -541,8 +568,9 @@ export default function RabbitR1() {
   };
 
   const handleLogin = () => {
-    // Redirect to GitHub OAuth - session will be created on callback
-    window.location.href = '/api/auth/github';
+    // Redirect to GitHub OAuth with return path
+    console.log('[RABBIT] 🔐 Redirecting to GitHub OAuth...');
+    window.location.href = '/api/auth/github?returnPath=' + encodeURIComponent('/rabbit');
   };
 
   const handleCancelLogin = () => {
