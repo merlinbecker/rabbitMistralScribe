@@ -98,16 +98,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).send('GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.');
     }
 
-    // Store return path from query parameter
-    const returnPath = req.query.returnPath as string;
-    if (returnPath) {
-      // Ensure returnPath is set to '/' to meet the user's requirement
-      req.session.returnPath = '/'; 
-    } else {
-      // If no returnPath is provided, default to '/'
-      req.session.returnPath = '/';
-    }
-
     const authUrl = authService.getAuthorizationUrl(req);
     if (!authUrl) {
       return res.status(500).send('Failed to generate authorization URL');
