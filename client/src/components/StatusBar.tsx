@@ -111,15 +111,12 @@ export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
               {pendingCount} pending
             </span>
           </>
-        ) : isOnline ? (
-          <>
-            <CheckCircle2 className="w-4 h-4 text-green-600" data-testid="synced-icon" />
-            <span className="text-caption text-muted-foreground">Synced</span>
-          </>
         ) : (
           <>
-            <WifiOff className="w-4 h-4 text-status-offline" />
-            <span className="text-caption text-muted-foreground">Offline</span>
+            <CheckCircle2 className="w-4 h-4 text-green-600" data-testid="synced-icon" />
+            <span className="text-caption text-muted-foreground">
+              {isOnline ? 'Synced' : 'Offline'}
+            </span>
           </>
         )}
       </div>
