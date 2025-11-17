@@ -161,8 +161,29 @@ export default function RabbitR1() {
       // Mark as authenticated immediately
       setIsAuthenticated(true);
       
-      // Sync pending recordings
-      syncPendingRecordings().catch(err => 
+      // Sync pending recordings immediately (token is already in localStorage)
+      // Don't wait for state update - use token directly
+      const syncImmediately = async () => {
+        try {
+          const pendingRecordings = await indexedDB.getAllRecordings();
+          
+          if (pendingRecordings.length === 0) {
+            return;
+          }
+
+          console.log(`[RABBIT] Syncing ${pendingRecordings.length} pending recording(s) via HTTP`);
+          
+          for (const pending of pendingRecordings) {
+            if (pending.status === 'queued' || pending.status === 'failed') {
+              await uploadRecording(pending.id, pending.audioBlob, pending.duration);
+            }
+          }
+        } catch (error) {
+          console.error('[RABBIT] Error syncing pending recordings:', error);
+        }
+      };
+      
+      syncImmediately().catch(err => 
         console.error('[RABBIT] Failed to sync recordings:', err)
       );
     } else {
