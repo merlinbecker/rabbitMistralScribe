@@ -32,8 +32,22 @@ export default function Settings() {
   const [summaryTemplate, setSummaryTemplate] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  // Check authentication on mount
+  // Check authentication on mount - also check URL params
   useEffect(() => {
+    // First, check if there's a token in the URL (from OAuth callback)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    
+    if (urlToken) {
+      console.log('[SETTINGS] Token found in URL - storing it');
+      localStorage.setItem('auth_token', urlToken);
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+      setIsAuthenticated(true);
+      return;
+    }
+    
+    // Otherwise, check localStorage
     const token = getStoredToken();
     if (!token) {
       console.log('[SETTINGS] No token found - redirecting to GitHub OAuth');

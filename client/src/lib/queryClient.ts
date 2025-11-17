@@ -50,28 +50,41 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-export async function apiRequest(
-  method: string,
-  url: string,
-  data?: unknown | undefined,
-): Promise<Response> {
-  const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
-
-  // Add stored token to headers if available
+export async function apiRequest(method: string, url: string, data?: any) {
   const token = getStoredToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+
+  if (!token) {
+    console.log('[API_REQUEST] No token available');
+    throw new Error('Unauthorized');
   }
 
-  const res = await fetch(url, {
+  const headers: HeadersInit = {
+    'Authorization': `Bearer ${token}`,
+  };
+
+  const options: RequestInit = {
     method,
     headers,
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "omit", // Changed from "include" to "omit" to remove cookie usage
-  });
+  };
 
-  await throwIfResNotOk(res);
-  return res;
+  if (data) {
+    headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(data);
+  }
+
+  const response = await fetch(url, options);
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.log('[API_REQUEST] 401 Unauthorized - clearing token');
+      clearStoredToken();
+      throw new Error('Unauthorized');
+    }
+    const errorText = await response.text();
+    throw new Error(`API request failed: ${response.status} ${errorText}`);
+  }
+
+  return response.json();
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
