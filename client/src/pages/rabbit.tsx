@@ -795,19 +795,9 @@ export default function RabbitR1() {
   };
 
   const handleLogin = () => {
-    // Check authentication status before redirecting to OAuth
-    if (!isAuthenticated) {
-      // Redirect to GitHub OAuth
-      console.log("[RABBIT] 🔐 Redirecting to GitHub OAuth...");
-      window.location.href = "/api/auth/github";
-    } else {
-      // If already authenticated, close the login prompt and proceed
-      setShowLoginPrompt(false);
-      console.log("[RABBIT] Already authenticated, closing login prompt.");
-      // Optionally, you could trigger a sync here or navigate to settings
-      // syncPendingRecordings();
-      // setLocation('/settings'); // Example navigation to settings
-    }
+    // Redirect to GitHub OAuth
+    console.log("[RABBIT] 🔐 Redirecting to GitHub OAuth...");
+    window.location.href = "/api/auth/github";
   };
 
   const handleCancelLogin = () => {
@@ -822,7 +812,6 @@ export default function RabbitR1() {
           isOnline={isOnline}
           isRecording={false}
           recordingTime={0}
-          onShowLogin={() => setShowLoginPrompt(true)}
         />
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
@@ -925,7 +914,6 @@ export default function RabbitR1() {
             (r) => r.status === "queued" || r.status === "failed",
           ).length
         }
-        onShowLogin={() => setShowLoginPrompt(true)}
       />
 
       {/* Login prompt overlay */}
