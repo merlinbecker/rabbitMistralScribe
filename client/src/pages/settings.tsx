@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Check, ExternalLink, LogOut, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Check, ExternalLink, LogOut, AlertCircle, WifiOff } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { useStatusNotification } from '@/hooks/use-status-notification';
 import { apiRequest, queryClient, clearStoredToken } from '@/lib/queryClient';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import type { UserSettings, GitHubRepo, UpdateUserSettings } from '@shared/schema';
 import {
   Select,
@@ -26,6 +27,7 @@ import {
 export default function Settings() {
   const { notify } = useStatusNotification();
   const [, setLocation] = useLocation();
+  const isOnline = useOnlineStatus();
   const [apiKey, setApiKey] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [summaryTemplate, setSummaryTemplate] = useState('');
@@ -34,7 +36,7 @@ export default function Settings() {
     // With Bearer tokens, logout is client-side only
     clearStoredToken();
     queryClient.clear();
-    setLocation('/auth');
+    setLocation('/');
     notify({
       title: 'Abgemeldet',
       description: 'Sie wurden erfolgreich abgemeldet.',
@@ -131,6 +133,37 @@ export default function Settings() {
     
     updateSettingsMutation.mutate(updates);
   };
+
+  // Show offline message if not connected
+  if (!isOnline) {
+    return (
+      <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">
+        <div className="h-12 px-3 flex items-center gap-2 border-b border-border">
+          <Link href="/">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              data-testid="button-back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </Link>
+          <h1 className="text-body font-bold">Einstellungen</h1>
+        </div>
+        
+        <div className="flex-1 flex items-center justify-center p-6">
+          <Alert>
+            <WifiOff className="h-4 w-4" />
+            <AlertTitle>Offline</AlertTitle>
+            <AlertDescription>
+              Einstellungen sind nur verfügbar, wenn Sie online sind.
+              Bitte stellen Sie eine Internetverbindung her.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">

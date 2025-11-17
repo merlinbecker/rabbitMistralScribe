@@ -4,7 +4,7 @@ import { LEDPixelDisplay } from "@/components/LEDPixelDisplay";
 import { RabbitStatusBar } from "@/components/RabbitStatusBar";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { indexedDB } from "@/lib/indexedDB";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, setStoredToken } from "@/lib/queryClient";
 import { ImageBitmapProvider } from "@/lib/ledBitmap";
 import type { LEDBitmap } from "@/lib/ledBitmap";
 import {
@@ -14,6 +14,7 @@ import {
 import type { Recording } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Github } from "lucide-react";
+import { useLocation } from "wouter";
 
 const MAX_RECORDING_TIME = 817; // 13:37 in seconds
 
@@ -47,6 +48,35 @@ export default function RabbitR1() {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const setLocation = useLocation()[1];
+
+  // Handle OAuth callback with token
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+
+    if (token) {
+      // Store token in localStorage
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+
+      setStoredToken(decodeURIComponent(token), expiresAt.toISOString());
+
+      console.log('[RABBIT] Token stored from OAuth callback');
+
+      // Clean URL
+      window.history.replaceState({}, '', '/');
+
+      // Update authentication state
+      setIsAuthenticated(true);
+      setShowLoginPrompt(false);
+
+      // Try to sync pending recordings
+      if (isOnline) {
+        syncPendingRecordings();
+      }
+    }
+  }, []);
 
   // Load LED bitmaps on mount
   useEffect(() => {
@@ -156,13 +186,13 @@ export default function RabbitR1() {
 
     // Check if returning from auth
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
+    const tokenFromUrl = params.get("token");
 
-    if (token) {
+    if (tokenFromUrl) {
       console.log("[RABBIT] 🔄 Returning from GitHub auth - saving token");
 
       // Save token to localStorage
-      localStorage.setItem("auth_token", token);
+      localStorage.setItem("auth_token", tokenFromUrl);
 
       // Clean URL immediately
       window.history.replaceState({}, "", "/");
@@ -619,7 +649,7 @@ export default function RabbitR1() {
         if (recording?.status === "transcribed") {
           console.log("[RABBIT] ✅ Transcription completed successfully!");
           console.log("[RABBIT] 🗑️ Deleting local copy from IndexedDB");
-          
+
           // Success - delete local copy
           await indexedDB.deleteRecording(localId);
           await queryClient.invalidateQueries({
@@ -628,7 +658,7 @@ export default function RabbitR1() {
           setTranscriptionStatus("complete");
 
           console.log("[RABBIT] ✅ Local copy deleted - recording fully processed");
-          
+
           // Reset after a few seconds
           setTimeout(() => {
             console.log("[RABBIT] Resetting transcription status to idle");
@@ -708,7 +738,7 @@ export default function RabbitR1() {
       const needSync = pendingRecordings.filter(
         (r) => r.status === "queued" || r.status === "failed"
       );
-      
+
       console.log(
         `[RABBIT] 🔄 Found ${needSync.length} recording(s) that need syncing`,
       );
@@ -721,7 +751,7 @@ export default function RabbitR1() {
       for (let i = 0; i < needSync.length; i++) {
         const pending = needSync[i];
         console.log(`[RABBIT] 📤 Syncing ${i + 1}/${needSync.length}: ${pending.id} (status: ${pending.status})`);
-        
+
         await uploadRecording(
           pending.id,
           pending.audioBlob,
@@ -773,6 +803,43 @@ export default function RabbitR1() {
   const handleCancelLogin = () => {
     setShowLoginPrompt(false);
   };
+
+  // Show login prompt if needed (only when online and not authenticated)
+  if (showLoginPrompt && isOnline && !isRecording) {
+    return (
+      <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">
+        <RabbitStatusBar
+          isOnline={isOnline}
+          isRecording={false}
+          recordingTime={0}
+        />
+
+        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
+          {mistralBitmap && <LEDPixelDisplay bitmap={mistralBitmap} />}
+
+          <div className="space-y-3 w-full text-center">
+            <p className="text-body text-muted-foreground">
+              Bitte melden Sie sich an, um Ihre Aufnahmen zu synchronisieren
+            </p>
+
+            <Button
+              onClick={() => {
+                window.location.href = '/api/auth/github';
+              }}
+              className="w-full h-12 text-body text-black"
+              data-testid="button-github-login"
+            >
+              Mit GitHub anmelden
+            </Button>
+
+            <p className="text-caption text-muted-foreground">
+              Wir benötigen Zugriff auf Ihre GitHub-Repositories, um Notizen zu speichern
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rabbit-view flex flex-col bg-black relative">
