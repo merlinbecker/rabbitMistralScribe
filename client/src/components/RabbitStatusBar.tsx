@@ -6,13 +6,15 @@ interface RabbitStatusBarProps {
   isRecording: boolean;
   recordingTime: number;
   transcriptionStatus?: 'idle' | 'uploading' | 'transcribing' | 'complete' | 'failed';
+  pendingUploads?: number;
 }
 
 export function RabbitStatusBar({ 
   isOnline, 
   isRecording, 
   recordingTime,
-  transcriptionStatus = 'idle'
+  transcriptionStatus = 'idle',
+  pendingUploads = 0
 }: RabbitStatusBarProps) {
   const battery = useBatteryStatus();
 
@@ -35,17 +37,27 @@ export function RabbitStatusBar({
   };
 
   const getTranscriptionIcon = () => {
-    switch (transcriptionStatus) {
-      case 'uploading':
-      case 'transcribing':
-        return <Loader2 className="w-4 h-4 animate-spin" />;
-      case 'complete':
-        return <CheckCircle2 className="w-4 h-4 text-green-600" />;
-      case 'failed':
-        return <XCircle className="w-4 h-4 text-red-600" />;
-      default:
-        return null;
+    // Show spinner only when actively uploading/transcribing
+    if (transcriptionStatus === 'uploading' || transcriptionStatus === 'transcribing') {
+      return <Loader2 className="w-4 h-4 animate-spin" />;
     }
+    
+    // Show pending uploads count if any exist
+    if (pendingUploads > 0) {
+      return (
+        <div className="flex items-center gap-1">
+          <span className="text-[10px]">{pendingUploads}</span>
+        </div>
+      );
+    }
+    
+    // Show result icons
+    if (transcriptionStatus === 'failed') {
+      return <XCircle className="w-4 h-4 text-red-600" />;
+    }
+    
+    // Default: Show green checkmark (synced)
+    return <CheckCircle2 className="w-4 h-4 text-green-600" />;
   };
 
   return (

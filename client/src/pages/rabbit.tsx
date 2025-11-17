@@ -649,6 +649,7 @@ export default function RabbitR1() {
         isRecording={isRecording}
         recordingTime={recordingTime}
         transcriptionStatus={transcriptionStatus}
+        pendingUploads={localRecordings.filter(r => !r.uploadedAt).length}
       />
 
       {/* Login prompt overlay */}
