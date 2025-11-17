@@ -1,19 +1,36 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { LEDPixelDisplay } from "@/components/LEDPixelDisplay";
 import { RabbitStatusBar } from "@/components/RabbitStatusBar";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { indexedDB } from "@/lib/indexedDB";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, apiRequest, clearStoredToken, getStoredToken } from "@/lib/queryClient";
 import { ImageBitmapProvider } from "@/lib/ledBitmap";
 import type { LEDBitmap } from "@/lib/ledBitmap";
 import {
   playRecordingStartSound,
   playRecordingStopSound,
 } from "@/utils/audioFeedback";
-import type { Recording } from "@shared/schema";
+import type { Recording, UserSettings, GitHubRepo, UpdateUserSettings } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Github } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { Github, Settings as SettingsIcon, X, Check, ExternalLink, LogOut, AlertCircle } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import { useStatusNotification } from "@/hooks/use-status-notification";
 
 const MAX_RECORDING_TIME = 817; // 13:37 in seconds
 
@@ -41,12 +58,75 @@ export default function RabbitR1() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [bitmapLoadedTimestamp, setBitmapLoadedTimestamp] = useState<number>(0);
+  
+  // Settings state
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [selectedRepo, setSelectedRepo] = useState('');
+  const [summaryTemplate, setSummaryTemplate] = useState('');
 
   const isOnline = useOnlineStatus();
+  const { notify } = useStatusNotification();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Fetch user settings with Bearer token
+  const { data: settings, isLoading: settingsLoading } = useQuery<UserSettings>({
+    queryKey: ['/api/settings'],
+    retry: 2,
+    enabled: isAuthenticated && isOnline,
+  });
+
+  // Pre-fill summary template when settings load
+  useEffect(() => {
+    if (settings?.summaryTemplate && !summaryTemplate) {
+      setSummaryTemplate(settings.summaryTemplate);
+    }
+  }, [settings, summaryTemplate]);
+
+  // Fetch GitHub repos with Bearer token
+  const { data: repos = [], isLoading: reposLoading } = useQuery<GitHubRepo[]>({
+    queryKey: ['/api/github/repos'],
+    retry: 2,
+    enabled: isAuthenticated && isOnline,
+  });
+
+  // Update settings mutation with Bearer token
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: UpdateUserSettings) => {
+      return await apiRequest('PATCH', '/api/settings', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/settings'] });
+      notify({
+        title: 'Einstellungen gespeichert',
+        description: 'Ihre Änderungen wurden erfolgreich gespeichert.',
+        type: 'success',
+      });
+      setShowSettings(false);
+    },
+    onError: (error: any) => {
+      // Check for authentication errors
+      if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
+        console.log('[RABBIT] Authentication failed - clearing token and redirecting');
+        clearStoredToken();
+        setIsAuthenticated(false);
+        setShowLoginPrompt(true);
+        return;
+      }
+      
+      notify({
+        title: 'Fehler',
+        description: 'Einstellungen konnten nicht gespeichert werden.',
+        type: 'error',
+      });
+    },
+  });
+
+  // Check if API key is required (not yet configured)
+  const isApiKeyRequired = !settings?.mistralApiKey && !apiKey;
 
   // Load LED bitmaps on mount
   useEffect(() => {
@@ -212,6 +292,28 @@ export default function RabbitR1() {
       isMounted = false;
     };
   }, []); // Only run once on mount
+
+  // Auto-show settings when needed: if online, not recording, and either not authenticated or API key missing
+  useEffect(() => {
+    if (!isOnline || isRecording) {
+      return;
+    }
+
+    // Check if user needs to login
+    if (!isAuthenticated) {
+      const token = getStoredToken();
+      if (!token) {
+        setShowLoginPrompt(true);
+        return;
+      }
+    }
+
+    // Check if API key is required (only when authenticated and settings are loaded)
+    if (isAuthenticated && settings && isApiKeyRequired) {
+      console.log('[RABBIT] API key required - showing settings');
+      setShowSettings(true);
+    }
+  }, [isOnline, isRecording, isAuthenticated, settings, isApiKeyRequired]);
 
   // Fetch local recordings from IndexedDB
   const { data: localRecordings = [] } = useQuery({
@@ -774,6 +876,62 @@ export default function RabbitR1() {
     setShowLoginPrompt(false);
   };
 
+  const handleOpenSettings = () => {
+    setShowSettings(true);
+  };
+
+  const handleCloseSettings = () => {
+    // Only allow closing if API key is not required
+    if (!isApiKeyRequired) {
+      setShowSettings(false);
+    } else {
+      notify({
+        title: 'API-Schlüssel erforderlich',
+        description: 'Bitte geben Sie einen Mistral API-Schlüssel ein, um fortzufahren.',
+        type: 'warning',
+      });
+    }
+  };
+
+  const handleSaveSettings = () => {
+    const repoData = selectedRepo ? selectedRepo.split('/') : null;
+    
+    const updates: UpdateUserSettings = {};
+    
+    console.log('[RABBIT SETTINGS] Preparing to save:', {
+      hasApiKeyInput: !!apiKey,
+      apiKeyLength: apiKey.length,
+      hasSelectedRepo: !!selectedRepo,
+      hasSummaryTemplate: summaryTemplate !== ''
+    });
+    
+    if (apiKey) updates.mistralApiKey = apiKey;
+    if (repoData) {
+      updates.githubRepoOwner = repoData[0];
+      updates.githubRepoName = repoData[1];
+    }
+    if (summaryTemplate !== '') {
+      updates.summaryTemplate = summaryTemplate;
+    }
+    
+    console.log('[RABBIT SETTINGS] Sending updates:', updates);
+    
+    updateSettingsMutation.mutate(updates);
+  };
+
+  const handleLogout = () => {
+    clearStoredToken();
+    queryClient.clear();
+    notify({
+      title: 'Abgemeldet',
+      description: 'Sie wurden erfolgreich abgemeldet.',
+      type: 'success',
+    });
+    setIsAuthenticated(false);
+    setShowSettings(false);
+    setShowLoginPrompt(true);
+  };
+
   return (
     <div className="rabbit-view flex flex-col bg-black relative">
       {/* LED Display - main focal point */}
@@ -836,18 +994,200 @@ export default function RabbitR1() {
         </div>
       </div>
 
-      {/* Minimal status bar */}
-      <RabbitStatusBar
-        isOnline={isOnline}
-        isRecording={isRecording}
-        recordingTime={recordingTime}
-        transcriptionStatus={transcriptionStatus}
-        pendingUploads={
-          localRecordings.filter(
-            (r) => r.status === "queued" || r.status === "failed",
-          ).length
-        }
-      />
+      {/* Minimal status bar with settings button */}
+      <div className="relative">
+        <RabbitStatusBar
+          isOnline={isOnline}
+          isRecording={isRecording}
+          recordingTime={recordingTime}
+          transcriptionStatus={transcriptionStatus}
+          pendingUploads={
+            localRecordings.filter(
+              (r) => r.status === "queued" || r.status === "failed",
+            ).length
+          }
+        />
+        {/* Settings button - positioned in bottom right corner */}
+        {!isRecording && (
+          <Button
+            onClick={handleOpenSettings}
+            variant="ghost"
+            size="icon"
+            className="absolute bottom-2 right-2 text-white hover:bg-gray-800"
+            title="Einstellungen"
+          >
+            <SettingsIcon className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Settings modal overlay */}
+      {showSettings && (
+        <div className="absolute inset-0 bg-black bg-opacity-95 flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-gray-900 rounded-lg w-full max-w-[240px] max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-gray-900 border-b border-gray-700 px-3 py-2 flex items-center justify-between">
+              <h2 className="text-white text-sm font-bold">Einstellungen</h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleCloseSettings}
+                className="h-8 w-8 text-white hover:bg-gray-800"
+                disabled={isApiKeyRequired && !apiKey}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div className="p-3 space-y-3">
+              {isApiKeyRequired && (
+                <Alert variant="destructive" className="text-xs">
+                  <AlertCircle className="h-3 w-3" />
+                  <AlertTitle className="text-xs">API-Schlüssel erforderlich</AlertTitle>
+                  <AlertDescription className="text-xs">
+                    Bitte geben Sie einen Mistral API-Schlüssel ein, um die Anwendung nutzen zu können.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Mistral API Key */}
+              <Card className="p-3 bg-gray-800 border-gray-700">
+                <div className="space-y-2">
+                  <div>
+                    <Label htmlFor="mistral-key" className="text-white text-xs font-medium">
+                      Mistral API-Schlüssel
+                    </Label>
+                    <p className="text-gray-400 text-xs mb-2">
+                      Für Transkription und Zusammenfassung
+                    </p>
+                    <Input
+                      id="mistral-key"
+                      type="password"
+                      placeholder="sk-..."
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="h-8 text-xs bg-gray-700 border-gray-600 text-white"
+                    />
+                    <a
+                      href="https://console.mistral.ai/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:underline inline-flex items-center gap-1 mt-1"
+                    >
+                      API-Schlüssel erstellen
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  {settings?.mistralApiKey && !apiKey && (
+                    <p className="text-xs text-gray-400 bg-gray-700 p-2 rounded-md">
+                      <Check className="w-3 h-3 inline mr-1" />
+                      API-Schlüssel ist gespeichert
+                    </p>
+                  )}
+                </div>
+              </Card>
+
+              {/* GitHub Repository */}
+              <Card className="p-3 bg-gray-800 border-gray-700">
+                <div className="space-y-2">
+                  <div>
+                    <Label htmlFor="github-repo" className="text-white text-xs font-medium">
+                      GitHub Repository
+                    </Label>
+                    <p className="text-gray-400 text-xs mb-2">
+                      Wo Notizen gespeichert werden
+                    </p>
+                    
+                    {reposLoading ? (
+                      <div className="h-8 bg-gray-700 animate-pulse rounded-md" />
+                    ) : (
+                      <Select 
+                        value={selectedRepo || `${settings?.githubRepoOwner}/${settings?.githubRepoName}`}
+                        onValueChange={setSelectedRepo}
+                      >
+                        <SelectTrigger 
+                          id="github-repo" 
+                          className="h-8 text-xs bg-gray-700 border-gray-600 text-white"
+                        >
+                          <SelectValue placeholder="Repository auswählen" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-800 border-gray-700">
+                          {repos.map((repo) => (
+                            <SelectItem 
+                              key={repo.id} 
+                              value={repo.full_name}
+                              className="text-white text-xs"
+                            >
+                              {repo.full_name}
+                              {repo.private && ' 🔒'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+
+                  {settings?.githubRepoOwner && settings?.githubRepoName && !selectedRepo && (
+                    <p className="text-xs text-gray-400 bg-gray-700 p-2 rounded-md">
+                      <Check className="w-3 h-3 inline mr-1" />
+                      {settings.githubRepoOwner}/{settings.githubRepoName}
+                    </p>
+                  )}
+                </div>
+              </Card>
+
+              {/* Summary Template */}
+              <Card className="p-3 bg-gray-800 border-gray-700">
+                <div className="space-y-2">
+                  <div>
+                    <Label htmlFor="summary-template" className="text-white text-xs font-medium">
+                      Zusammenfassungs-Vorlage (optional)
+                    </Label>
+                    <p className="text-gray-400 text-xs mb-2">
+                      Anweisungen für die KI-Zusammenfassung
+                    </p>
+                    <Textarea
+                      id="summary-template"
+                      placeholder="Standard: Du bist ein Assistent, der Audio-Notizen zusammenfasst..."
+                      value={summaryTemplate}
+                      onChange={(e) => setSummaryTemplate(e.target.value)}
+                      className="text-xs min-h-[80px] resize-none bg-gray-700 border-gray-600 text-white"
+                    />
+                  </div>
+
+                  {settings?.summaryTemplate && !summaryTemplate && (
+                    <p className="text-xs text-gray-400 bg-gray-700 p-2 rounded-md">
+                      <Check className="w-3 h-3 inline mr-1" />
+                      Eigene Vorlage ist gespeichert
+                    </p>
+                  )}
+                </div>
+              </Card>
+
+              {/* Save Button */}
+              <Button
+                onClick={handleSaveSettings}
+                disabled={updateSettingsMutation.isPending || settingsLoading || (isApiKeyRequired && !apiKey)}
+                className="w-full h-9 text-xs"
+              >
+                {updateSettingsMutation.isPending ? 'Speichern...' : 'Einstellungen speichern'}
+              </Button>
+              
+              {/* Logout Button */}
+              <Button
+                onClick={handleLogout}
+                variant="outline"
+                className="w-full h-9 gap-2 text-xs text-white border-gray-600 hover:bg-gray-800"
+              >
+                <LogOut className="w-3 h-3" />
+                Abmelden
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Login prompt overlay */}
       {showLoginPrompt && (
