@@ -74,21 +74,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).send('GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.');
     }
 
-    // Store the return path in query param
-    const returnPath = req.query.returnPath as string || '/';
-    
     const authUrl = authService.getAuthorizationUrl(req);
     if (!authUrl) {
       return res.status(500).send('Failed to generate authorization URL');
     }
-
-    // Store return path in a cookie (since we can't use session)
-    res.cookie('oauth_return_path', returnPath, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 5 * 60 * 1000, // 5 minutes
-      sameSite: 'lax'
-    });
 
     res.redirect(authUrl);
   });
@@ -113,21 +102,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const userId = result.user.id;
       
-      // Get return path from cookie
-      const returnPath = req.cookies.oauth_return_path || '/';
-      
-      // Clear the cookie
-      res.clearCookie('oauth_return_path');
-      
       console.log('[AUTH] ========================================');
       console.log('[AUTH] ✅ OAuth successful');
       console.log('[AUTH] User ID:', userId);
-      console.log('[AUTH] Return path:', returnPath);
-      console.log('[AUTH] Redirecting with token...');
+      console.log('[AUTH] Redirecting to root with token...');
       console.log('[AUTH] ========================================');
 
-      // Redirect back to the original page with token
-      res.redirect(`${returnPath}?token=${encodeURIComponent(userId)}`);
+      // Always redirect to root with token
+      res.redirect(`/?token=${encodeURIComponent(userId)}`);
     } catch (error) {
       console.error('[AUTH] OAuth callback error:', error);
       res.redirect('/?error=oauth_failed');

@@ -155,7 +155,7 @@ export default function RabbitR1() {
       localStorage.setItem('auth_token', token);
       
       // Clean URL immediately
-      window.history.replaceState({}, '', '/rabbit');
+      window.history.replaceState({}, '', '/');
       console.log('[RABBIT] ✅ Token saved, URL cleaned');
       
       // Mark as authenticated immediately
@@ -568,9 +568,9 @@ export default function RabbitR1() {
   };
 
   const handleLogin = () => {
-    // Redirect to GitHub OAuth with return path
+    // Redirect to GitHub OAuth
     console.log('[RABBIT] 🔐 Redirecting to GitHub OAuth...');
-    window.location.href = '/api/auth/github?returnPath=' + encodeURIComponent('/rabbit');
+    window.location.href = '/api/auth/github';
   };
 
   const handleCancelLogin = () => {
