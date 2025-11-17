@@ -30,24 +30,16 @@ export default function Settings() {
   const [selectedRepo, setSelectedRepo] = useState('');
   const [summaryTemplate, setSummaryTemplate] = useState('');
   
-  const handleLogout = async () => {
-    try {
-      await apiRequest('POST', '/api/auth/logout');
-      clearStoredToken();
-      queryClient.clear();
-      setLocation('/auth');
-      notify({
-        title: 'Abgemeldet',
-        description: 'Sie wurden erfolgreich abgemeldet.',
-        type: 'success',
-      });
-    } catch (error) {
-      notify({
-        title: 'Fehler',
-        description: 'Abmeldung fehlgeschlagen.',
-        type: 'error',
-      });
-    }
+  const handleLogout = () => {
+    // With Bearer tokens, logout is client-side only
+    clearStoredToken();
+    queryClient.clear();
+    setLocation('/auth');
+    notify({
+      title: 'Abgemeldet',
+      description: 'Sie wurden erfolgreich abgemeldet.',
+      type: 'success',
+    });
   };
 
   // Fetch user settings

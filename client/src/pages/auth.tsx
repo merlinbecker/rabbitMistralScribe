@@ -11,10 +11,6 @@ export default function Auth() {
   const [githubBitmap, setGithubBitmap] = useState<LEDBitmap | null>(null);
   
   const setError = (message: string) => console.error(message);
-  const checkAuthStatus = () => {
-    console.log("Checking auth status...");
-    setLocation('/');
-  };
 
   // Load GitHub logo bitmap on mount
   useEffect(() => {
@@ -59,7 +55,6 @@ export default function Auth() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const authenticated = params.get('authenticated');
     const token = params.get('token');
     const error = params.get('error');
 
@@ -72,24 +67,22 @@ export default function Auth() {
         error === 'session_failed' ? 'Session konnte nicht erstellt werden' :
         'Ein Fehler ist aufgetreten'
       );
-    } else if (authenticated === 'true' && token) {
-      // Store token in localStorage
+    } else if (token) {
+      // Store token in localStorage using the helper function
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
 
-      localStorage.setItem('auth_token', JSON.stringify({
-        token: decodeURIComponent(token),
-        expiresAt: expiresAt.toISOString()
-      }));
+      setStoredToken(decodeURIComponent(token), expiresAt.toISOString());
 
       console.log('[AUTH] Token stored in localStorage');
 
       // Clean URL
       window.history.replaceState({}, '', '/');
 
-      checkAuthStatus();
+      // Redirect to home
+      setLocation('/');
     }
-  }, [checkAuthStatus, setLocation]); // Added setLocation to dependency array
+  }, [setLocation]);
 
   const handleGitHubLogin = () => {
     window.location.href = '/api/auth/github';
