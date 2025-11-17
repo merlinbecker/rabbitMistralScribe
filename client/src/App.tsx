@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Settings from "@/pages/settings";
 import Recordings from "@/pages/recordings";
+import Auth from "@/pages/auth";
 import RabbitR1 from "@/pages/rabbit";
 import NotFound from "@/pages/not-found";
 import type { User } from "@shared/schema";
@@ -100,6 +101,7 @@ function Router() {
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}
       </Route>
+      <Route path="/auth" component={Auth} />
       <Route component={NotFound} />
     </Switch>
   );
