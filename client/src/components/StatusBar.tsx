@@ -1,7 +1,9 @@
-import { Wifi, WifiOff, Circle, CheckCircle2, XCircle, AlertCircle, Info } from 'lucide-react';
+import { Wifi, WifiOff, Circle, CheckCircle2, XCircle, AlertCircle, Info, Loader2, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useStatusNotification } from '@/hooks/use-status-notification';
 import type { NotificationType } from '@/hooks/use-status-notification';
+import { indexedDB } from '@/lib/indexedDB';
+import type { LocalRecording } from '@/lib/indexedDB';
 
 interface StatusBarProps {
   isRecording: boolean;
@@ -10,7 +12,23 @@ interface StatusBarProps {
 
 export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [localRecordings, setLocalRecordings] = useState<LocalRecording[]>([]);
   const { current: currentNotification } = useStatusNotification();
+
+  // Load local recordings
+  useEffect(() => {
+    const loadLocalRecordings = async () => {
+      const recordings = await indexedDB.getAllRecordings();
+      setLocalRecordings(recordings);
+    };
+
+    loadLocalRecordings();
+
+    // Refresh every 2 seconds to stay in sync
+    const interval = setInterval(loadLocalRecordings, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -44,6 +62,11 @@ export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Calculate sync status
+  const pendingCount = localRecordings.filter(r => r.status === 'queued').length;
+  const uploadingCount = localRecordings.filter(r => r.status === 'uploading').length;
+  const isUploading = uploadingCount > 0;
+
   return (
     <div 
       className="h-8 px-3 flex items-center justify-between bg-black backdrop-blur-sm border-b border-border"
@@ -76,10 +99,22 @@ export function StatusBar({ isRecording, recordingTime }: StatusBarProps) {
               {currentNotification.title}
             </span>
           </>
+        ) : isUploading ? (
+          <>
+            <Loader2 className="w-4 h-4 text-blue-600 animate-spin" data-testid="upload-spinner" />
+            <span className="text-caption text-muted-foreground">Uploading...</span>
+          </>
+        ) : pendingCount > 0 ? (
+          <>
+            <Upload className="w-4 h-4 text-yellow-600" data-testid="pending-icon" />
+            <span className="text-caption text-muted-foreground" data-testid="pending-count">
+              {pendingCount} pending
+            </span>
+          </>
         ) : isOnline ? (
           <>
-            <Wifi className="w-4 h-4 text-status-online" />
-            <span className="text-caption text-muted-foreground">Online</span>
+            <CheckCircle2 className="w-4 h-4 text-green-600" data-testid="synced-icon" />
+            <span className="text-caption text-muted-foreground">Synced</span>
           </>
         ) : (
           <>
