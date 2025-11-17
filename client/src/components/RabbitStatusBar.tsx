@@ -45,8 +45,9 @@ export function RabbitStatusBar({
     // Show pending uploads count if any exist
     if (pendingUploads > 0) {
       return (
-        <div className="flex items-center gap-1">
-          <span className="text-[10px]">{pendingUploads}</span>
+        <div className="flex items-center gap-0.5">
+          <span className="text-[10px] font-bold text-orange-400">{pendingUploads}</span>
+          <span className="text-[8px] text-orange-400">⏳</span>
         </div>
       );
     }
