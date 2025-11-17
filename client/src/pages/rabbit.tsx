@@ -222,7 +222,10 @@ export default function RabbitR1() {
       const token = localStorage.getItem('auth_token');
       if (!token) {
         console.log('[RABBIT] ⚠️ No auth token - showing login prompt');
-        setShowLoginPrompt(true);
+        // Only show login prompt if not currently recording
+        if (!isRecording) {
+          setShowLoginPrompt(true);
+        }
       } else if (isAuthenticated) {
         console.log('[RABBIT] ✅ Authenticated - syncing now');
         syncPendingRecordings().catch(err => 
@@ -292,9 +295,9 @@ export default function RabbitR1() {
       if (isAuthenticated) {
         await syncPendingRecordings();
       } else {
-        // Show login prompt if there are pending recordings
+        // Show login prompt if there are pending recordings (but not during recording)
         const pending = await indexedDB.getAllRecordings();
-        if (pending.length > 0) {
+        if (pending.length > 0 && !isRecording) {
           setShowLoginPrompt(true);
         }
       }
@@ -406,7 +409,10 @@ export default function RabbitR1() {
       if (!token) {
         setIsAuthenticated(false);
         await indexedDB.updateRecording(localId, { status: 'queued' });
-        setShowLoginPrompt(true);
+        // Only show login prompt if not currently recording
+        if (!isRecording) {
+          setShowLoginPrompt(true);
+        }
         return;
       }
 
@@ -428,12 +434,14 @@ export default function RabbitR1() {
       if (!response.ok) {
         // Check if it's an auth error
         if (response.status === 401) {
-          // Not authenticated - show login prompt
+          // Not authenticated - show login prompt (but not during recording)
           localStorage.removeItem('auth_token');
           setIsAuthenticated(false);
           await indexedDB.updateRecording(localId, { status: 'queued' });
           console.log('[RABBIT] 401 Unauthorized - redirecting to login');
-          setShowLoginPrompt(true);
+          if (!isRecording) {
+            setShowLoginPrompt(true);
+          }
           return;
         }
         throw new Error('Upload failed');
@@ -523,7 +531,10 @@ export default function RabbitR1() {
       const token = localStorage.getItem('auth_token');
       if (!token) {
         console.log('[RABBIT] Cannot sync - no auth token');
-        setShowLoginPrompt(true);
+        // Only show login prompt if not currently recording
+        if (!isRecording) {
+          setShowLoginPrompt(true);
+        }
         return;
       }
       
