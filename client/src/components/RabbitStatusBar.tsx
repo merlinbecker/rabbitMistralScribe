@@ -1,5 +1,6 @@
-import { Wifi, WifiOff, Battery, BatteryCharging, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Wifi, WifiOff, Battery, BatteryCharging, Loader2, CheckCircle2, XCircle, Settings } from 'lucide-react';
 import { useBatteryStatus } from '@/hooks/useBatteryStatus';
+import { Link } from 'wouter';
 
 interface RabbitStatusBarProps {
   isOnline: boolean;
@@ -67,8 +68,18 @@ export function RabbitStatusBar({
       style={{ fontSize: '10px' }}
       data-testid="rabbit-status-bar"
     >
-      {/* Left side: Recording timer or connection status */}
-      <div className="flex items-center gap-1">
+      {/* Left side: Settings icon, Recording timer or connection status */}
+      <div className="flex items-center gap-1.5">
+        <Link href="/settings">
+          <button 
+            className="p-0 hover:opacity-70 transition-opacity"
+            aria-label="Einstellungen"
+            data-testid="settings-button"
+          >
+            <Settings className="w-3 h-3" />
+          </button>
+        </Link>
+        
         {isRecording ? (
           <span className="font-mono font-bold" data-testid="recording-timer">
             {formatTime(recordingTime)}
