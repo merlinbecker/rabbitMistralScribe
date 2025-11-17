@@ -519,9 +519,10 @@ export default function RabbitR1() {
         return;
       }
 
-      // Check authentication before syncing
-      if (!isAuthenticated) {
-        console.log('[RABBIT] Cannot sync - user not authenticated');
+      // Check token directly instead of state (state updates are async)
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        console.log('[RABBIT] Cannot sync - no auth token');
         setShowLoginPrompt(true);
         return;
       }
