@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Check, ExternalLink, LogOut, AlertCircle } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { useStatusNotification } from '@/hooks/use-status-notification';
-import { apiRequest, queryClient, clearStoredToken } from '@/lib/queryClient';
+import { apiRequest, queryClient, clearStoredToken, getStoredToken } from '@/lib/queryClient';
 import type { UserSettings, GitHubRepo, UpdateUserSettings } from '@shared/schema';
 import {
   Select,
@@ -29,31 +30,50 @@ export default function Settings() {
   const [apiKey, setApiKey] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [summaryTemplate, setSummaryTemplate] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  const handleLogout = async () => {
-    try {
-      await apiRequest('POST', '/api/auth/logout');
-      clearStoredToken();
-      queryClient.clear();
-      setLocation('/auth');
-      notify({
-        title: 'Abgemeldet',
-        description: 'Sie wurden erfolgreich abgemeldet.',
-        type: 'success',
-      });
-    } catch (error) {
-      notify({
-        title: 'Fehler',
-        description: 'Abmeldung fehlgeschlagen.',
-        type: 'error',
-      });
+  // Check authentication on mount - also check URL params
+  useEffect(() => {
+    // First, check if there's a token in the URL (from OAuth callback)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    
+    if (urlToken) {
+      console.log('[SETTINGS] Token found in URL - storing it');
+      localStorage.setItem('auth_token', urlToken);
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+      setIsAuthenticated(true);
+      return;
     }
+    
+    // Otherwise, check localStorage
+    const token = getStoredToken();
+    if (!token) {
+      console.log('[SETTINGS] No token found - redirecting to GitHub OAuth');
+      window.location.href = '/api/auth/github';
+      return;
+    }
+    setIsAuthenticated(true);
+  }, []);
+  
+  const handleLogout = () => {
+    clearStoredToken();
+    queryClient.clear();
+    notify({
+      title: 'Abgemeldet',
+      description: 'Sie wurden erfolgreich abgemeldet.',
+      type: 'success',
+    });
+    // Redirect to GitHub OAuth for re-authentication
+    window.location.href = '/api/auth/github';
   };
 
-  // Fetch user settings
+  // Fetch user settings with Bearer token
   const { data: settings, isLoading: settingsLoading, error: settingsError } = useQuery<UserSettings>({
     queryKey: ['/api/settings'],
     retry: 2,
+    enabled: isAuthenticated,
   });
 
   // Pre-fill summary template when settings load
@@ -63,13 +83,14 @@ export default function Settings() {
     }
   }, [settings, summaryTemplate]);
 
-  // Fetch GitHub repos
+  // Fetch GitHub repos with Bearer token
   const { data: repos = [], isLoading: reposLoading, error: reposError } = useQuery<GitHubRepo[]>({
     queryKey: ['/api/github/repos'],
     retry: 2,
+    enabled: isAuthenticated,
   });
 
-  // Update settings mutation
+  // Update settings mutation with Bearer token
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: UpdateUserSettings) => {
       return await apiRequest('PATCH', '/api/settings', data);
@@ -82,15 +103,18 @@ export default function Settings() {
         type: 'success',
       });
       
-      // If API key was just saved and we were in required mode, redirect to home
-      if (isApiKeyRequired && apiKey) {
-        console.log('[SETTINGS] API key saved - redirecting to home');
-        setTimeout(() => {
-          setLocation('/');
-        }, 500); // Small delay to let user see the success message
-      }
+      // Note: We don't redirect to home anymore - user stays on settings page
+      // They can navigate back manually using the back button
     },
-    onError: () => {
+    onError: (error: any) => {
+      // Check for authentication errors
+      if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
+        console.log('[SETTINGS] Authentication failed - clearing token and redirecting');
+        clearStoredToken();
+        window.location.href = '/api/auth/github';
+        return;
+      }
+      
       notify({
         title: 'Fehler',
         description: 'Einstellungen konnten nicht gespeichert werden.',
@@ -102,9 +126,9 @@ export default function Settings() {
   // Check if API key is required (not yet configured)
   const isApiKeyRequired = !settings?.mistralApiKey && !apiKey;
 
-  // Prevent navigation away if API key is required
+  // Prevent navigation away if API key is required AND not yet entered
   const handleBack = (e: React.MouseEvent) => {
-    if (isApiKeyRequired) {
+    if (isApiKeyRequired && !apiKey) {
       e.preventDefault();
       notify({
         title: 'API-Schlüssel erforderlich',
@@ -140,10 +164,21 @@ export default function Settings() {
     updateSettingsMutation.mutate(updates);
   };
 
+  // Show loading while checking authentication
+  if (!isAuthenticated) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="text-body">Authentifizierung wird geprüft...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">
       <div className="h-12 px-3 flex items-center gap-2 border-b border-border">
-        {isApiKeyRequired ? (
+        {isApiKeyRequired && !apiKey ? (
           <Button 
             variant="ghost" 
             size="icon"

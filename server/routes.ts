@@ -248,17 +248,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
     const userId = (req as any).userId;
     
-    console.log('[ROUTES] POST /api/recordings - User:', userId);
+    console.log('[ROUTES] ========================================');
+    console.log('[ROUTES] 📥 POST /api/recordings - New recording upload');
+    console.log('[ROUTES] User ID:', userId);
+    console.log('[ROUTES] Timestamp:', new Date().toISOString());
+    console.log('[ROUTES] ========================================');
 
     try {
       if (!req.file) {
+        console.log('[ROUTES] ❌ No audio file in request');
         return res.status(400).json({ error: 'No audio file provided' });
       }
 
       const duration = parseInt(req.body.duration || '0');
+      console.log('[ROUTES] 📊 Audio details:');
+      console.log('[ROUTES]   - Size:', req.file.size, 'bytes');
+      console.log('[ROUTES]   - MIME type:', req.file.mimetype);
+      console.log('[ROUTES]   - Duration:', duration, 'seconds');
+
       const audioBase64 = req.file.buffer.toString('base64');
       const audioUrl = `data:${req.file.mimetype};base64,${audioBase64}`;
 
+      console.log('[ROUTES] 💾 Creating recording in database...');
       const createdRecording = await storage.createRecording({
         userId,
         audioUrl,
@@ -269,23 +280,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         githubFileUrl: null,
       });
 
+      console.log('[ROUTES] ✅ Recording created in database');
+      console.log('[ROUTES] Recording ID:', createdRecording.id);
+      console.log('[ROUTES] Initial status:', createdRecording.status);
+
       // Check if user has Mistral API key before queueing
+      console.log('[ROUTES] 🔍 Checking user settings for Mistral API key...');
       const userSettings = await storage.getUserSettings(userId);
       if (!userSettings?.mistralApiKey) {
+        console.log('[ROUTES] ⚠️ No Mistral API key configured - marking as failed');
         await storage.updateRecording(createdRecording.id, { status: 'failed' });
+        console.log('[ROUTES] 📤 Returning response with failed status');
         res.json(createdRecording);
         return;
       }
 
+      console.log('[ROUTES] ✅ Mistral API key found');
+      console.log('[ROUTES] 📋 Enqueuing transcription job...');
+
       // Enqueue transcription job
-      await jobQueue.enqueue(createdRecording.id, userId);
-      transcriptionWorker.notifyNewJob().catch(err => 
-        console.error('[ROUTES] Worker notification failed:', err)
-      );
+      const jobId = await jobQueue.enqueue(createdRecording.id, userId);
+      console.log('[ROUTES] ✅ Job enqueued successfully');
+      console.log('[ROUTES] Job ID:', jobId);
+
+      console.log('[ROUTES] 🔔 Notifying transcription worker...');
+      transcriptionWorker.notifyNewJob().catch(err => {
+        console.error('[ROUTES] ❌ Worker notification failed:', err);
+      });
+
+      console.log('[ROUTES] 📤 Returning successful response to client');
+      console.log('[ROUTES] Response data:', {
+        id: createdRecording.id,
+        status: createdRecording.status,
+        duration: createdRecording.duration
+      });
 
       res.json(createdRecording);
     } catch (error) {
-      console.error('[UPLOAD] Upload failed:', error);
+      console.error('[ROUTES] ❌ Upload failed with error:', error);
       res.status(500).json({ error: 'Failed to create recording' });
     }
   });

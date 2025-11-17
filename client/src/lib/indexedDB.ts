@@ -41,13 +41,25 @@ class IndexedDBManager {
   async addRecording(recording: LocalRecording): Promise<void> {
     if (!this.db) await this.init();
 
+    console.log('[IndexedDB] ➕ Adding new recording');
+    console.log('[IndexedDB]   ID:', recording.id);
+    console.log('[IndexedDB]   Status:', recording.status);
+    console.log('[IndexedDB]   Duration:', recording.duration, 's');
+    console.log('[IndexedDB]   Blob size:', recording.audioBlob.size, 'bytes');
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const request = store.add(recording);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        console.log('[IndexedDB] ✅ Recording added successfully');
+        resolve();
+      };
+      request.onerror = () => {
+        console.error('[IndexedDB] ❌ Failed to add recording:', request.error);
+        reject(request.error);
+      };
     });
   }
 
@@ -67,6 +79,10 @@ class IndexedDBManager {
   async updateRecording(id: string, updates: Partial<LocalRecording>): Promise<void> {
     if (!this.db) await this.init();
 
+    console.log('[IndexedDB] 🔄 Updating recording');
+    console.log('[IndexedDB]   ID:', id);
+    console.log('[IndexedDB]   Updates:', JSON.stringify(updates, null, 2));
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
@@ -75,29 +91,52 @@ class IndexedDBManager {
       getRequest.onsuccess = () => {
         const recording = getRequest.result;
         if (recording) {
+          const oldStatus = recording.status;
           const updatedRecording = { ...recording, ...updates };
           const putRequest = store.put(updatedRecording);
-          putRequest.onsuccess = () => resolve();
-          putRequest.onerror = () => reject(putRequest.error);
+          putRequest.onsuccess = () => {
+            console.log('[IndexedDB] ✅ Recording updated');
+            if (updates.status && oldStatus !== updates.status) {
+              console.log('[IndexedDB]   Status changed:', oldStatus, '→', updates.status);
+            }
+            resolve();
+          };
+          putRequest.onerror = () => {
+            console.error('[IndexedDB] ❌ Failed to update recording:', putRequest.error);
+            reject(putRequest.error);
+          };
         } else {
+          console.error('[IndexedDB] ❌ Recording not found:', id);
           reject(new Error('Recording not found'));
         }
       };
 
-      getRequest.onerror = () => reject(getRequest.error);
+      getRequest.onerror = () => {
+        console.error('[IndexedDB] ❌ Failed to get recording:', getRequest.error);
+        reject(getRequest.error);
+      };
     });
   }
 
   async deleteRecording(id: string): Promise<void> {
     if (!this.db) await this.init();
 
+    console.log('[IndexedDB] 🗑️ Deleting recording');
+    console.log('[IndexedDB]   ID:', id);
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const request = store.delete(id);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        console.log('[IndexedDB] ✅ Recording deleted successfully');
+        resolve();
+      };
+      request.onerror = () => {
+        console.error('[IndexedDB] ❌ Failed to delete recording:', request.error);
+        reject(request.error);
+      };
     });
   }
 
