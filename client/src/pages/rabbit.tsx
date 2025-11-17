@@ -431,6 +431,14 @@ export default function RabbitR1() {
   ): Promise<string | null> => {
     const recordingId = crypto.randomUUID();
 
+    console.log("[RABBIT] ========================================");
+    console.log("[RABBIT] 💾 Saving recording locally to IndexedDB");
+    console.log("[RABBIT] Recording ID:", recordingId);
+    console.log("[RABBIT] Duration:", duration, "seconds");
+    console.log("[RABBIT] Blob size:", audioBlob.size, "bytes");
+    console.log("[RABBIT] Blob type:", audioBlob.type);
+    console.log("[RABBIT] ========================================");
+
     try {
       // Save to IndexedDB
       await indexedDB.addRecording({
@@ -441,12 +449,22 @@ export default function RabbitR1() {
         status: "queued",
       });
 
+      console.log("[RABBIT] ✅ Recording saved to IndexedDB successfully");
+      console.log("[RABBIT] Status: queued (pending upload)");
+
       // Refresh UI
       await queryClient.invalidateQueries({ queryKey: ["local-recordings"] });
 
+      // Get updated count of pending recordings
+      const allRecordings = await indexedDB.getAllRecordings();
+      const pendingCount = allRecordings.filter(
+        (r) => r.status === "queued" || r.status === "failed"
+      ).length;
+      console.log("[RABBIT] 📊 Total pending recordings in IndexedDB:", pendingCount);
+
       return recordingId;
     } catch (error) {
-      console.error("[RABBIT] Error saving recording:", error);
+      console.error("[RABBIT] ❌ Error saving recording to IndexedDB:", error);
       return null;
     }
   };
@@ -456,11 +474,20 @@ export default function RabbitR1() {
     audioBlob: Blob,
     duration: number,
   ) => {
+    console.log("[RABBIT] ========================================");
+    console.log("[RABBIT] 📤 Starting upload to server");
+    console.log("[RABBIT] Local Recording ID:", localId);
+    console.log("[RABBIT] Duration:", duration, "seconds");
+    console.log("[RABBIT] Blob size:", audioBlob.size, "bytes");
+    console.log("[RABBIT] ========================================");
+
     try {
       const token = localStorage.getItem("auth_token");
       if (!token) {
+        console.log("[RABBIT] ⚠️ No auth token - cannot upload");
         setIsAuthenticated(false);
         await indexedDB.updateRecording(localId, { status: "queued" });
+        console.log("[RABBIT] Status updated to 'queued' - waiting for authentication");
         // Only show login prompt if not currently recording
         if (!isRecording) {
           setShowLoginPrompt(true);
@@ -468,12 +495,19 @@ export default function RabbitR1() {
         return;
       }
 
+      console.log("[RABBIT] ✅ Auth token found - proceeding with upload");
+      console.log("[RABBIT] Token length:", token.length);
+
       // Mark as uploading
       await indexedDB.updateRecording(localId, { status: "uploading" });
+      console.log("[RABBIT] 🔄 Status updated to 'uploading'");
 
       const formData = new FormData();
       formData.append("audio", audioBlob);
       formData.append("duration", duration.toString());
+
+      console.log("[RABBIT] 🚀 Sending POST request to /api/recordings");
+      const uploadStartTime = Date.now();
 
       const response = await fetch("/api/recordings", {
         method: "POST",
@@ -483,50 +517,82 @@ export default function RabbitR1() {
         body: formData,
       });
 
+      const uploadDuration = Date.now() - uploadStartTime;
+      console.log("[RABBIT] 📊 Upload completed in", uploadDuration, "ms");
+      console.log("[RABBIT] Response status:", response.status, response.statusText);
+
       if (!response.ok) {
         // Check if it's an auth error
         if (response.status === 401) {
           // Not authenticated - show login prompt (but not during recording)
+          console.log("[RABBIT] ❌ 401 Unauthorized - token invalid or expired");
           localStorage.removeItem("auth_token");
           setIsAuthenticated(false);
           await indexedDB.updateRecording(localId, { status: "queued" });
-          console.log("[RABBIT] 401 Unauthorized - redirecting to login");
+          console.log("[RABBIT] Status reset to 'queued' - awaiting re-authentication");
           if (!isRecording) {
             setShowLoginPrompt(true);
           }
           return;
         }
+        console.error("[RABBIT] ❌ Upload failed with status:", response.status);
         throw new Error("Upload failed");
       }
 
       const recording = await response.json();
+      console.log("[RABBIT] ✅ Upload successful!");
+      console.log("[RABBIT] Server Recording ID:", recording.id);
+      console.log("[RABBIT] Server Status:", recording.status);
 
       // Update status
       await indexedDB.updateRecording(localId, {
         status: "uploaded",
         serverRecordingId: recording.id,
       });
+      console.log("[RABBIT] 💾 Local status updated to 'uploaded'");
 
       // Refresh
       await queryClient.invalidateQueries({ queryKey: ["local-recordings"] });
 
+      // Get updated count
+      const allRecordings = await indexedDB.getAllRecordings();
+      const pendingCount = allRecordings.filter(
+        (r) => r.status === "queued" || r.status === "failed"
+      ).length;
+      console.log("[RABBIT] 📊 Remaining pending recordings:", pendingCount);
+
+      console.log("[RABBIT] 🔍 Starting transcription monitoring for server ID:", recording.id);
       // Start monitoring for transcription completion
       monitorTranscription(recording.id, localId);
     } catch (error) {
-      console.error("[RABBIT] Upload failed:", error);
+      console.error("[RABBIT] ❌ Upload failed with error:", error);
       await indexedDB.updateRecording(localId, { status: "failed" });
+      console.log("[RABBIT] 💾 Status updated to 'failed' - will retry on next sync");
     }
   };
 
   const monitorTranscription = async (serverId: string, localId: string) => {
+    console.log("[RABBIT] ========================================");
+    console.log("[RABBIT] 👁️ Starting transcription monitoring");
+    console.log("[RABBIT] Server ID:", serverId);
+    console.log("[RABBIT] Local ID:", localId);
+    console.log("[RABBIT] Max attempts: 20 (5 minutes @ 15s intervals)");
+    console.log("[RABBIT] ========================================");
+
     // Poll for transcription status
     let attempts = 0;
     const maxAttempts = 20; // ~5 minutes at 15s intervals
 
     const checkStatus = async () => {
       try {
+        attempts++;
+        console.log(`[RABBIT] 🔍 Checking transcription status (attempt ${attempts}/${maxAttempts})`);
+
         const token = localStorage.getItem("auth_token");
-        if (!token) return false;
+        if (!token) {
+          console.log("[RABBIT] ⚠️ No auth token - stopping monitoring");
+          return false;
+        }
 
         const response = await fetch("/api/recordings", {
           method: "GET",
@@ -535,12 +601,25 @@ export default function RabbitR1() {
           },
         });
 
-        if (!response.ok) return false;
+        if (!response.ok) {
+          console.log("[RABBIT] ⚠️ Failed to fetch recordings - status:", response.status);
+          return false;
+        }
 
         const recordings: Recording[] = await response.json();
         const recording = recordings.find((r) => r.id === serverId);
 
+        if (!recording) {
+          console.log("[RABBIT] ⚠️ Recording not found on server");
+          return false;
+        }
+
+        console.log("[RABBIT] 📊 Recording status:", recording.status);
+
         if (recording?.status === "transcribed") {
+          console.log("[RABBIT] ✅ Transcription completed successfully!");
+          console.log("[RABBIT] 🗑️ Deleting local copy from IndexedDB");
+          
           // Success - delete local copy
           await indexedDB.deleteRecording(localId);
           await queryClient.invalidateQueries({
@@ -548,65 +627,111 @@ export default function RabbitR1() {
           });
           setTranscriptionStatus("complete");
 
+          console.log("[RABBIT] ✅ Local copy deleted - recording fully processed");
+          
           // Reset after a few seconds
-          setTimeout(() => setTranscriptionStatus("idle"), 5000);
+          setTimeout(() => {
+            console.log("[RABBIT] Resetting transcription status to idle");
+            setTranscriptionStatus("idle");
+          }, 5000);
           return true;
         } else if (recording?.status === "failed") {
+          console.log("[RABBIT] ❌ Transcription failed on server");
           setTranscriptionStatus("failed");
-          setTimeout(() => setTranscriptionStatus("idle"), 5000);
+          setTimeout(() => {
+            console.log("[RABBIT] Resetting transcription status to idle");
+            setTranscriptionStatus("idle");
+          }, 5000);
           return true;
         }
 
+        console.log("[RABBIT] ⏳ Still processing - will check again in 15s");
         return false;
-      } catch {
+      } catch (error) {
+        console.error("[RABBIT] ❌ Error checking transcription status:", error);
         return false;
       }
     };
 
     const poll = setInterval(async () => {
-      attempts++;
       const done = await checkStatus();
 
-      if (done || attempts >= maxAttempts) {
+      if (done) {
+        console.log("[RABBIT] 🏁 Monitoring completed - transcription done");
+        clearInterval(poll);
+      } else if (attempts >= maxAttempts) {
+        console.log("[RABBIT] ⏱️ Max monitoring attempts reached - stopping");
         clearInterval(poll);
       }
     }, 15000); // Check every 15 seconds
   };
 
   const syncPendingRecordings = async () => {
+    console.log("[RABBIT] ========================================");
+    console.log("[RABBIT] 🔄 syncPendingRecordings() called");
+    console.log("[RABBIT] Timestamp:", new Date().toISOString());
+    console.log("[RABBIT] ========================================");
+
     try {
       const pendingRecordings = await indexedDB.getAllRecordings();
+      console.log("[RABBIT] 📊 Total recordings in IndexedDB:", pendingRecordings.length);
 
       if (pendingRecordings.length === 0) {
+        console.log("[RABBIT] ✅ No recordings to sync - IndexedDB is empty");
         return;
       }
+
+      // Log status breakdown
+      const statusBreakdown = pendingRecordings.reduce((acc, r) => {
+        acc[r.status] = (acc[r.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log("[RABBIT] 📊 Status breakdown:", statusBreakdown);
 
       // Check token directly instead of state (state updates are async)
       const token = localStorage.getItem("auth_token");
       if (!token) {
-        console.log("[RABBIT] Cannot sync - no auth token");
+        console.log("[RABBIT] ⚠️ Cannot sync - no auth token in localStorage");
         // Only show login prompt if not currently recording
         if (!isRecording) {
+          console.log("[RABBIT] Showing login prompt");
           setShowLoginPrompt(true);
+        } else {
+          console.log("[RABBIT] Recording in progress - delaying login prompt");
         }
         return;
       }
 
+      console.log("[RABBIT] ✅ Auth token present");
+
+      // Filter recordings that need syncing
+      const needSync = pendingRecordings.filter(
+        (r) => r.status === "queued" || r.status === "failed"
+      );
+      
       console.log(
-        `[RABBIT] Syncing ${pendingRecordings.length} pending recording(s) via HTTP`,
+        `[RABBIT] 🔄 Found ${needSync.length} recording(s) that need syncing`,
       );
 
-      for (const pending of pendingRecordings) {
-        if (pending.status === "queued" || pending.status === "failed") {
-          await uploadRecording(
-            pending.id,
-            pending.audioBlob,
-            pending.duration,
-          );
-        }
+      if (needSync.length === 0) {
+        console.log("[RABBIT] ✅ All recordings already uploaded or in progress");
+        return;
       }
+
+      for (let i = 0; i < needSync.length; i++) {
+        const pending = needSync[i];
+        console.log(`[RABBIT] 📤 Syncing ${i + 1}/${needSync.length}: ${pending.id} (status: ${pending.status})`);
+        
+        await uploadRecording(
+          pending.id,
+          pending.audioBlob,
+          pending.duration,
+        );
+      }
+
+      console.log("[RABBIT] ✅ Sync completed");
     } catch (error) {
-      console.error("[RABBIT] Error syncing pending recordings:", error);
+      console.error("[RABBIT] ❌ Error syncing pending recordings:", error);
     }
   };
 
