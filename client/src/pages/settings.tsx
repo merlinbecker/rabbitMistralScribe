@@ -103,13 +103,8 @@ export default function Settings() {
         type: 'success',
       });
       
-      // If API key was just saved and we were in required mode, redirect to home
-      if (isApiKeyRequired && apiKey) {
-        console.log('[SETTINGS] API key saved - redirecting to home');
-        setTimeout(() => {
-          setLocation('/');
-        }, 500);
-      }
+      // Note: We don't redirect to home anymore - user stays on settings page
+      // They can navigate back manually using the back button
     },
     onError: (error: any) => {
       // Check for authentication errors
@@ -131,9 +126,9 @@ export default function Settings() {
   // Check if API key is required (not yet configured)
   const isApiKeyRequired = !settings?.mistralApiKey && !apiKey;
 
-  // Prevent navigation away if API key is required
+  // Prevent navigation away if API key is required AND not yet entered
   const handleBack = (e: React.MouseEvent) => {
-    if (isApiKeyRequired) {
+    if (isApiKeyRequired && !apiKey) {
       e.preventDefault();
       notify({
         title: 'API-Schlüssel erforderlich',
@@ -183,7 +178,7 @@ export default function Settings() {
   return (
     <div className="h-screen flex flex-col bg-background max-w-[240px] mx-auto">
       <div className="h-12 px-3 flex items-center gap-2 border-b border-border">
-        {isApiKeyRequired ? (
+        {isApiKeyRequired && !apiKey ? (
           <Button 
             variant="ghost" 
             size="icon"
