@@ -22,8 +22,6 @@ const MAX_RECORDING_TIME = 817; // 13:37 in seconds
  * - Max recording time: 13:37
  */
 export default function RabbitR1() {
-  console.log('[RABBIT] Component mounted');
-  
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -47,8 +45,6 @@ export default function RabbitR1() {
     
     const loadBitmaps = async () => {
       try {
-        console.log('[RABBIT] Loading bitmaps...');
-        
         // Load Mistral logo
         const mistralProvider = new ImageBitmapProvider({
           imageUrl: `${window.location.origin}/mistral.png`,
@@ -61,16 +57,11 @@ export default function RabbitR1() {
         if (!isMounted) return;
         
         const bitmap = mistralProvider.getBitmap();
-        console.log('[RABBIT] Mistral bitmap loaded:', bitmap);
-        console.log('[RABBIT] First pixel:', bitmap[0][0]);
-        console.log('[RABBIT] Center pixel:', bitmap[8][8]);
-        console.log('[RABBIT] Setting state with bitmap');
         setMistralBitmap(bitmap);
         setBitmapLoadedTimestamp(Date.now());
 
         // Load microphone icon (we'll create a simple one programmatically)
         const micBitmap = createMicrophoneBitmap();
-        console.log('[RABBIT] Microphone bitmap created');
         setMicrophoneBitmap(micBitmap);
       } catch (error) {
         console.error('[RABBIT] Failed to load bitmaps:', error);
@@ -93,19 +84,13 @@ export default function RabbitR1() {
     let isMounted = true;
     
     const checkAuth = async () => {
-      if (!isOnline) {
-        console.log('[RABBIT] 🔌 Offline - skipping auth check');
-        return;
-      }
+      if (!isOnline) return;
       
       const token = localStorage.getItem('auth_token');
       if (!token) {
-        console.log('[RABBIT] No auth token found');
         setIsAuthenticated(false);
         return;
       }
-      
-      console.log('[RABBIT] 🔍 Checking authentication...');
       
       try {
         const response = await fetch('/api/auth/user', {
@@ -125,18 +110,15 @@ export default function RabbitR1() {
             localStorage.removeItem('auth_token');
           }
           
-          console.log('[RABBIT] Auth state:', { wasAuthenticated, nowAuthenticated });
-          
           setIsAuthenticated(nowAuthenticated);
           
           // If just authenticated, sync recordings
           if (nowAuthenticated && !wasAuthenticated) {
-            console.log('[RABBIT] 🎉 Just authenticated - syncing recordings');
             await syncPendingRecordings();
           }
         }
       } catch (error) {
-        console.error('[RABBIT] ❌ Auth check error:', error);
+        console.error('[AUTH] Error checking authentication:', error);
         if (isMounted) {
           setIsAuthenticated(false);
           localStorage.removeItem('auth_token');
@@ -149,14 +131,11 @@ export default function RabbitR1() {
     const token = params.get('token');
     
     if (token) {
-      console.log('[RABBIT] 🔄 Returning from GitHub auth - saving token');
-      
       // Save token to localStorage
       localStorage.setItem('auth_token', token);
       
       // Clean URL immediately
       window.history.replaceState({}, '', '/');
-      console.log('[RABBIT] ✅ Token saved, URL cleaned');
       
       // Mark as authenticated immediately
       setIsAuthenticated(true);
@@ -170,8 +149,6 @@ export default function RabbitR1() {
           if (pendingRecordings.length === 0) {
             return;
           }
-
-          console.log(`[RABBIT] Syncing ${pendingRecordings.length} pending recording(s) via HTTP`);
           
           for (const pending of pendingRecordings) {
             if (pending.status === 'queued' || pending.status === 'failed') {
@@ -179,16 +156,15 @@ export default function RabbitR1() {
             }
           }
         } catch (error) {
-          console.error('[RABBIT] Error syncing pending recordings:', error);
+          console.error('[SYNC] Error after login:', error);
         }
       };
       
       syncImmediately().catch(err => 
-        console.error('[RABBIT] Failed to sync recordings:', err)
+        console.error('[SYNC] Failed after login:', err)
       );
     } else {
       // Check if we have a valid token
-      console.log('[RABBIT] No token in URL, checking localStorage...');
       checkAuth();
     }
     
@@ -222,8 +198,22 @@ export default function RabbitR1() {
       return 'idle';
     })();
     
+    // Debug status bar state
+    const pendingCount = localRecordings.filter(r => r.status === 'queued' || r.status === 'failed').length;
+    console.log('[STATUS_BAR] Update:', {
+      totalRecordings: localRecordings.length,
+      pendingCount,
+      status: newStatus,
+      recordings: localRecordings.map(r => ({ id: r.id.substring(0, 8), status: r.status }))
+    });
+    
     // Only update if status actually changed
-    setTranscriptionStatus(prev => prev === newStatus ? prev : newStatus);
+    setTranscriptionStatus(prev => {
+      if (prev !== newStatus) {
+        console.log('[STATUS_BAR] Status changed:', prev, '→', newStatus);
+      }
+      return prev === newStatus ? prev : newStatus;
+    });
   }, [localRecordings]);
 
   // Auto-sync pending recordings when conditions are met
@@ -237,20 +227,16 @@ export default function RabbitR1() {
     );
 
     if (isOnline && !isRecording && hasPendingRecordings) {
-      console.log('[RABBIT] 🔄 Auto-sync conditions met - attempting to sync pending recordings');
-      
       // Check if we're authenticated
       const token = localStorage.getItem('auth_token');
       if (!token) {
-        console.log('[RABBIT] ⚠️ No auth token - showing login prompt');
         // Only show login prompt if not currently recording
         if (!isRecording) {
           setShowLoginPrompt(true);
         }
       } else if (isAuthenticated) {
-        console.log('[RABBIT] ✅ Authenticated - syncing now');
         syncPendingRecordings().catch(err => 
-          console.error('[RABBIT] Auto-sync failed:', err)
+          console.error('[SYNC] Auto-sync failed:', err)
         );
       }
     }
@@ -312,7 +298,6 @@ export default function RabbitR1() {
   // Direct HTTP sync when coming online (no service worker on Rabbit R1)
   useEffect(() => {
     const handleOnline = async () => {
-      console.log('[RABBIT] Network came online - syncing pending recordings via HTTP');
       if (isAuthenticated) {
         await syncPendingRecordings();
       } else {
@@ -459,7 +444,6 @@ export default function RabbitR1() {
           localStorage.removeItem('auth_token');
           setIsAuthenticated(false);
           await indexedDB.updateRecording(localId, { status: 'queued' });
-          console.log('[RABBIT] 401 Unauthorized - redirecting to login');
           if (!isRecording) {
             setShowLoginPrompt(true);
           }
@@ -482,7 +466,7 @@ export default function RabbitR1() {
       // Start monitoring for transcription completion
       monitorTranscription(recording.id, localId);
     } catch (error) {
-      console.error('[RABBIT] Upload failed:', error);
+      console.error('[UPLOAD] Failed:', error);
       await indexedDB.updateRecording(localId, { status: 'failed' });
     }
   };
@@ -551,7 +535,6 @@ export default function RabbitR1() {
       // Check token directly instead of state (state updates are async)
       const token = localStorage.getItem('auth_token');
       if (!token) {
-        console.log('[RABBIT] Cannot sync - no auth token');
         // Only show login prompt if not currently recording
         if (!isRecording) {
           setShowLoginPrompt(true);
@@ -559,15 +542,13 @@ export default function RabbitR1() {
         return;
       }
       
-      console.log(`[RABBIT] Syncing ${pendingRecordings.length} pending recording(s) via HTTP`);
-      
       for (const pending of pendingRecordings) {
         if (pending.status === 'queued' || pending.status === 'failed') {
           await uploadRecording(pending.id, pending.audioBlob, pending.duration);
         }
       }
     } catch (error) {
-      console.error('[RABBIT] Error syncing pending recordings:', error);
+      console.error('[SYNC] Error syncing recordings:', error);
     }
   };
 
@@ -602,7 +583,6 @@ export default function RabbitR1() {
 
   const handleLogin = () => {
     // Redirect to GitHub OAuth
-    console.log('[RABBIT] 🔐 Redirecting to GitHub OAuth...');
     window.location.href = '/api/auth/github';
   };
 
@@ -618,8 +598,6 @@ export default function RabbitR1() {
       <div className="flex-1 flex items-center justify-center p-2">
         <div onClick={handleLEDClick} className="cursor-pointer w-full max-w-[220px]">
           {(() => {
-            console.log('[RABBIT] Render - isRecording:', isRecording, 'mistralBitmap:', !!mistralBitmap);
-            
             if (isRecording) {
               if (audioStream) {
                 return <LEDPixelDisplay key="audio" isRecording={isRecording} audioStream={audioStream} />;
@@ -629,10 +607,8 @@ export default function RabbitR1() {
                 return <LEDPixelDisplay key="idle" isRecording={false} audioStream={null} />;
               }
             } else if (mistralBitmap) {
-              console.log('[RABBIT] Rendering Mistral bitmap');
               return <LEDPixelDisplay key={`mistral-${bitmapLoadedTimestamp}`} bitmap={mistralBitmap} />;
             } else {
-              console.log('[RABBIT] Showing loading...');
               return (
                 <div className="w-[224px] h-[224px] bg-black rounded-md flex items-center justify-center text-white text-sm">
                   Lade...

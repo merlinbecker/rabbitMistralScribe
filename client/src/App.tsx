@@ -4,7 +4,6 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import Home from "@/pages/home";
 import Settings from "@/pages/settings";
 import Recordings from "@/pages/recordings";
 import Auth from "@/pages/auth";
@@ -96,7 +95,6 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={RabbitR1} />
-      <Route path="/old" component={Home} />
       <Route path="/recordings">
         {() => <ProtectedRoute component={Recordings} />}
       </Route>
