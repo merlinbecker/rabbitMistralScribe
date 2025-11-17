@@ -1,9 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import session from "express-session";
 import multer from "multer";
 import { storage, databaseService } from "./storage";
-import { ReplitSessionStore } from "./replitSessionStore";
 import { AuthenticationService } from "./authenticationService";
 import { insertRecordingSchema, updateRecordingSchema, updateUserSettingsSchema } from "@shared/schema";
 import { z } from "zod";
@@ -26,26 +24,32 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB max
 });
 
-// Session middleware
-declare module 'express-session' {
-  interface SessionData {
-    userId?: string;
-  }
-}
-
-// Auth middleware using AuthenticationService
+// Auth middleware using Bearer token only
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const user = await authService.authenticateRequest(req);
-
-  if (!user) {
-    console.log('[AUTH] Authentication failed - sessionID:', req.sessionID);
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    console.log('[AUTH] No Bearer token provided');
     return res.status(401).json({
       error: 'Unauthorized',
-      details: 'No session or valid Bearer token found'
+      details: 'Bearer token required'
+    });
+  }
+
+  const userId = authHeader.substring(7);
+  const user = await storage.getUser(userId);
+
+  if (!user) {
+    console.log('[AUTH] Invalid token - user not found:', userId);
+    return res.status(401).json({
+      error: 'Unauthorized',
+      details: 'Invalid token'
     });
   }
 
   console.log('[AUTH] User authenticated:', user.id);
+  // Store userId in request for route handlers
+  (req as any).userId = user.id;
   next();
 }
 
@@ -63,22 +67,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.setHeader('Service-Worker-Allowed', '/');
     res.sendFile('service-worker.js', { root: './public' });
   });
-
-  // Session configuration with Replit Database Store
-  app.use(
-    session({
-      store: new ReplitSessionStore(databaseService),
-      secret: process.env.SESSION_SECRET || 'audio-notes-secret-key',
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        secure: true, // Jetzt sicher, da wir proxy vertrauen
-        sameSite: 'lax',
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      },
-    })
-  );
 
   // GitHub OAuth routes
   app.get('/api/auth/github', (req, res) => {
@@ -112,40 +100,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.redirect(`/?error=${result.error || 'oauth_failed'}`);
       }
 
-      try {
-        await authService.createSession(req, result.user.id);
+      const userId = result.user.id;
+      
+      console.log('[AUTH] ========================================');
+      console.log('[AUTH] ✅ OAuth successful');
+      console.log('[AUTH] User ID:', userId);
+      console.log('[AUTH] Redirecting to root with token...');
+      console.log('[AUTH] ========================================');
 
-        console.log('[AUTH] ========================================');
-        console.log('[AUTH] Session created successfully');
-        console.log('[AUTH] SessionID:', req.sessionID);
-        console.log('[AUTH] Session userId:', req.session.userId);
-        console.log('[AUTH] Cookie settings:', {
-          httpOnly: req.session.cookie.httpOnly,
-          secure: req.session.cookie.secure,
-          sameSite: req.session.cookie.sameSite,
-          domain: req.session.cookie.domain,
-          path: req.session.cookie.path
-        });
-        console.log('[AUTH] ========================================');
-
-        // Wait for session to be saved before redirecting
-        await new Promise<void>((resolve, reject) => {
-          req.session.save((err) => {
-            if (err) {
-              console.error('[AUTH] ❌ Session save before redirect failed:', err);
-              reject(err);
-            } else {
-              console.log('[AUTH] ✅ Session saved before redirect');
-              resolve();
-            }
-          });
-        });
-
-        res.redirect(`/?authenticated=true&token=${encodeURIComponent(result.user.id)}`);
-      } catch (sessionError) {
-        console.error('[AUTH] Session creation failed:', sessionError);
-        return res.redirect('/?error=session_failed');
-      }
+      // Always redirect to root with token
+      res.redirect(`/?token=${encodeURIComponent(userId)}`);
     } catch (error) {
       console.error('[AUTH] OAuth callback error:', error);
       res.redirect('/?error=oauth_failed');
@@ -165,74 +129,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get('/api/auth/user', async (req, res) => {
-    console.log('[AUTH] /api/auth/user called');
-    console.log('[AUTH] Session ID:', req.sessionID);
-    console.log('[AUTH] Cookies received:', req.headers.cookie);
-    console.log('[AUTH] Session data:', req.session);
-
-    const userId = authService.getUserIdFromRequest(req);
-    if (!userId) {
-      console.log('[AUTH] No userId found in session or token');
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.log('[AUTH] No Bearer token provided');
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const userId = authHeader.substring(7);
     const safeUser = await authService.getSafeUser(userId);
+
     if (!safeUser) {
-      console.log('[AUTH] User not found for userId:', userId);
+      console.log('[AUTH] User not found for token:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('[AUTH] User found:', { id: safeUser.id, username: safeUser.username });
+    console.log('[AUTH] User authenticated:', safeUser.username);
 
     // Retry failed recordings on login
     const userSettings = await storage.getUserSettings(userId);
     if (userSettings?.mistralApiKey) {
-      console.log('[AUTH] ✅ Mistral API key found - checking for failed recordings to retry');
-
       const recordings = await storage.getRecordingsByUserId(userId);
       const failedRecordings = recordings.filter(r => r.status === 'failed');
 
       if (failedRecordings.length > 0) {
-        console.log(`[AUTH] 🔄 Found ${failedRecordings.length} failed recording(s) - queueing for retry`);
+        console.log(`[AUTH] Queueing ${failedRecordings.length} failed recording(s) for retry`);
 
         for (const recording of failedRecordings) {
-          console.log(`[AUTH] Queueing failed recording: ${recording.id}`);
-
-          // Reset status to pending
           await storage.updateRecording(recording.id, { status: 'pending' });
-
-          // Add to job queue
           await jobQueue.enqueue(recording.id, userId);
         }
 
-        // Only notify worker if we actually queued jobs
-        console.log('[AUTH] 🔔 Notifying worker of newly queued failed recordings');
         transcriptionWorker.notifyNewJob().catch(err => 
-          console.error('[AUTH] Failed to notify worker after queueing failed recordings:', err)
+          console.error('[AUTH] Failed to notify worker:', err)
         );
-      } else {
-        console.log('[AUTH] No failed recordings found to retry - skipping worker notification');
       }
-    } else {
-      console.log('[AUTH] ⚠️ No Mistral API key configured - skipping failed recordings retry');
     }
 
     res.json(safeUser);
   });
 
   app.post('/api/auth/logout', async (req, res) => {
-    try {
-      await authService.destroySession(req);
-      res.json({ success: true, clearToken: true });
-    } catch (error) {
-      console.error('[AUTH] Logout failed:', error);
-      res.status(500).json({ error: 'Logout failed' });
-    }
+    // With Bearer tokens, logout is client-side (delete token from localStorage)
+    res.json({ success: true });
   });
 
   // Settings routes
   app.get('/api/settings', requireAuth, async (req, res) => {
-    const settings = await storage.getUserSettings(req.session.userId!);
+    const userId = (req as any).userId;
+    const settings = await storage.getUserSettings(userId);
     if (!settings) {
       return res.status(404).json({ error: 'Settings not found' });
     }
@@ -241,7 +186,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch('/api/settings', requireAuth, async (req, res) => {
     try {
-      console.log('[SETTINGS] Update request for user:', req.session.userId);
+      const userId = (req as any).userId;
+      console.log('[SETTINGS] Update request for user:', userId);
       console.log('[SETTINGS] Request body:', {
         hasMistralKey: !!req.body.mistralApiKey,
         mistralKeyLength: req.body.mistralApiKey?.length || 0,
@@ -250,10 +196,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const updates = updateUserSettingsSchema.parse(req.body);
-      const settings = await storage.updateUserSettings(req.session.userId!, updates);
+      const settings = await storage.updateUserSettings(userId, updates);
 
       if (!settings) {
-        console.error('[SETTINGS] Settings not found for user:', req.session.userId);
+        console.error('[SETTINGS] Settings not found for user:', userId);
         return res.status(404).json({ error: 'Settings not found' });
       }
 
@@ -276,7 +222,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GitHub repositories route
   app.get('/api/github/repos', requireAuth, async (req, res) => {
     try {
-      const repos = await githubService.fetchRepositories(req.session.userId!);
+      const userId = (req as any).userId;
+      const repos = await githubService.fetchRepositories(userId);
       res.json(repos);
     } catch (error) {
       console.error('Failed to fetch GitHub repos:', error);
@@ -286,7 +233,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Recordings routes
   app.get('/api/recordings', requireAuth, async (req, res) => {
-    const recordings = await storage.getRecordingsByUserId(req.session.userId!);
+    const userId = (req as any).userId;
+    const recordings = await storage.getRecordingsByUserId(userId);
 
     // Only log if there are processing recordings
     const processingCount = recordings.filter(r => r.status === 'pending' || r.status === 'transcribing').length;
@@ -298,129 +246,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
-    const logMsg = `\n[ROUTES] ======================================== POST /api/recordings called at ${new Date().toISOString()} for user ${req.session.userId} ======================================== \n`;
-    process.stdout.write(logMsg);
-    console.log('[ROUTES] ========================================');
-    console.log('[ROUTES] POST /api/recordings called');
-    console.log('[ROUTES] Timestamp:', new Date().toISOString());
-    console.log('[ROUTES] User ID:', req.session.userId);
-    console.log('[ROUTES] ========================================');
+    const userId = (req as any).userId;
+    
+    console.log('[ROUTES] POST /api/recordings - User:', userId);
 
     try {
-      process.stdout.write('[UPLOAD] Recording upload started\n');
-      console.log('[UPLOAD] Recording upload started');
-
       if (!req.file) {
-        console.error('[UPLOAD] ❌ No audio file provided in request');
         return res.status(400).json({ error: 'No audio file provided' });
       }
 
-      console.log('[UPLOAD] ✅ File received:', {
-        mimetype: req.file.mimetype,
-        size: req.file.buffer.length,
-        duration: req.body.duration
-      });
-
       const duration = parseInt(req.body.duration || '0');
-
-      // Store audio file as base64
-      console.log('[UPLOAD] 🔄 Encoding audio to base64...');
       const audioBase64 = req.file.buffer.toString('base64');
       const audioUrl = `data:${req.file.mimetype};base64,${audioBase64}`;
-      console.log('[UPLOAD] ✅ Audio encoded to base64, length:', audioBase64.length);
 
-      // Create recording entry
-      console.log('[UPLOAD] 🔄 Creating recording entry in database...');
-      let createdRecording;
-      try {
-        createdRecording = await storage.createRecording({
-          userId: req.session.userId!,
-          audioUrl,
-          duration,
-          status: 'pending',
-          transcript: null,
-          summary: null,
-          githubFileUrl: null,
-        });
-        console.log('[UPLOAD] ✅ Recording created in DB:', {
-          id: createdRecording.id,
-          userId: createdRecording.userId,
-          status: createdRecording.status,
-          duration: createdRecording.duration
-        });
-      } catch (error) {
-        console.error('[UPLOAD] ❌ CRITICAL: Failed to create recording in DB');
-        console.error('[UPLOAD] Error:', error);
-        console.error('[UPLOAD] Stack:', error instanceof Error ? error.stack : 'No stack');
-        throw error;
-      }
-
-      console.log('[ROUTES] 📤 Sending response to client with recording:', createdRecording.id);
-      console.log('[ROUTES] ========================================');
+      const createdRecording = await storage.createRecording({
+        userId,
+        audioUrl,
+        duration,
+        status: 'pending',
+        transcript: null,
+        summary: null,
+        githubFileUrl: null,
+      });
 
       // Check if user has Mistral API key before queueing
-      const userSettings = await storage.getUserSettings(req.session.userId!);
+      const userSettings = await storage.getUserSettings(userId);
       if (!userSettings?.mistralApiKey) {
-        console.log('[ROUTES] ⚠️ No Mistral API key - marking recording as failed');
-        await storage.updateRecording(createdRecording.id, { 
-          status: 'failed',
-        });
+        await storage.updateRecording(createdRecording.id, { status: 'failed' });
         res.json(createdRecording);
         return;
       }
 
       // Enqueue transcription job
-      console.log('[ROUTES] ========================================');
-      console.log('[ROUTES] 📋 QUEUEING TRANSCRIPTION JOB');
-      console.log('[ROUTES] Recording ID:', createdRecording.id);
-      console.log('[ROUTES] User ID:', req.session.userId);
-      console.log('[ROUTES] ========================================');
+      await jobQueue.enqueue(createdRecording.id, userId);
+      transcriptionWorker.notifyNewJob().catch(err => 
+        console.error('[ROUTES] Worker notification failed:', err)
+      );
 
-      await jobQueue.enqueue(createdRecording.id, req.session.userId!);
-
-      // Notify worker of new job
-      console.log('[ROUTES] ========================================');
-      console.log('[ROUTES] 🔔 NOTIFYING WORKER OF NEW JOB');
-      console.log('[ROUTES] About to call transcriptionWorker.notifyNewJob()');
-      console.log('[ROUTES] ========================================');
-
-      try {
-        await transcriptionWorker.notifyNewJob();
-
-        console.log('[ROUTES] ========================================');
-        console.log('[ROUTES] ✅ WORKER NOTIFICATION COMPLETED');
-        console.log('[ROUTES] notifyNewJob() returned successfully');
-        console.log('[ROUTES] ========================================');
-      } catch (error) {
-        console.error('[ROUTES] ❌ CRITICAL: Worker notification failed');
-        console.error('[ROUTES] Error:', error);
-        console.error('[ROUTES] Stack:', error instanceof Error ? error.stack : 'No stack');
-        // Don't throw - recording was saved, just worker notification failed
-      }
-
-      // Send response immediately
-      console.log('[ROUTES] 📤 Sending response to client with recording:', createdRecording.id);
       res.json(createdRecording);
-
-      console.log('[ROUTES] ========================================');
-      console.log('[ROUTES] POST /api/recordings completed successfully');
-      console.log('[ROUTES] ========================================');
     } catch (error) {
-      console.error('[UPLOAD] ========================================');
-      console.error('[UPLOAD] ❌ UPLOAD FAILED');
-      console.error('[UPLOAD] Error:', error);
-      console.error('[UPLOAD] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
-      console.error('[UPLOAD] ========================================');
+      console.error('[UPLOAD] Upload failed:', error);
       res.status(500).json({ error: 'Failed to create recording' });
     }
   });
 
   app.patch('/api/recordings/:id', requireAuth, async (req, res) => {
     try {
+      const userId = (req as any).userId;
       const { id } = req.params;
       const recording = await storage.getRecording(id);
 
-      if (!recording || recording.userId !== req.session.userId) {
+      if (!recording || recording.userId !== userId) {
         return res.status(404).json({ error: 'Recording not found' });
       }
 
@@ -439,15 +315,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/recordings/:id/transcribe', requireAuth, async (req, res) => {
     try {
+      const userId = (req as any).userId;
       const { id } = req.params;
       const recording = await storage.getRecording(id);
 
-      if (!recording || recording.userId !== req.session.userId) {
+      if (!recording || recording.userId !== userId) {
         return res.status(404).json({ error: 'Recording not found' });
       }
 
       // Get user settings for Mistral API key
-      const settings = await storage.getUserSettings(req.session.userId!);
+      const settings = await storage.getUserSettings(userId);
       if (!settings?.mistralApiKey) {
         return res.status(400).json({ error: 'Mistral API key not configured' });
       }
@@ -492,7 +369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Save to GitHub if configured
       if (settings.githubRepoOwner && settings.githubRepoName) {
-        await githubService.saveRecordingToGitHub({ recordingId: id, userId: req.session.userId! });
+        await githubService.saveRecordingToGitHub({ recordingId: id, userId });
       }
 
       const updatedRecording = await storage.getRecording(id);

@@ -1,0 +1,45 @@
+Schreibe einen Endpunkt /rabbit, der eine abgespeckte UI liefert, die extra für den rabbit r1 geschrieben wurde.
+Ausgehend von der App-Ui soll der Aufbau minimiert sein und folgende Funktionen beinhalten, bzw. anders sein:
+
+Die Webseite ist ohne auth zugänglich und komplett offline bedienbar. das anmelden des nutzers auf dem erfolgt nur, wenn internet vorhanden ist und eine transkription vorgenommen werden soll. ansonsten ist die app komplett offline und macht keine requests.
+
+Sie enthält das LEDDisplay mit dem mistralLogo (mistral.png)
+
+es ist nur das LEDDisplay zu sehen, sonst keine weiteren Elemente
+
+unter dem LEDPanel sind nur die icons oder zahlen zu sehen in kleiner Schrift
+
+Internet vorhanden oder nicht
+restliche batterielaufzeit
+Stand einer evlt. laufenden Transkription (in Icons)
+Wichtig ist, dass das LED Panel nicht gescrollt werden muss, es ist nichts weiter zu sehen als dieses panel und die kleine statusleiste
+
+Der Nutzer kann entweder auf das LED Panel klicken oder den seitenknopf betätigen, um die aufnahme zu starten. daraufhin ändert sich das LED Bild zu einem mikrofon icon. in der kleinen statusleiste läuft ein timer für die aufnahme.
+beim betätigen des knopfes oder beim drücken des led displays ertönt die 3 ton melodie
+
+rabbitLeitfaden.md
+
+Die Aufnahme kann maximal 13:37 Minuten gehen, danach wird automatisch abgebrochen und die aufnahme lokal gespeichert.
+
+Der Nutzer schliesst die aufnahme ab, wenn er nochmal den seitenknopf drückt oder 2 mal kurz hintereinander auf das LED panel.
+Danach wechselt das LED bild wieder auf mistral.
+
+Die Aufnahme wird in der indexed DB gespeichert.
+Danach wird ein Upload versucht, sofern der Rabbit R1 online ist. Hier kann es sein dass dem Nutzer die Anmeldemaske gezeigt wird.
+Den Status stellst du durch die kleinen Icons in der Statusleiste dar.
+
+Es wird immer versucht, pending recordings hochzuladen, aber nur, wenn internet vorhanden ist.
+
+Prüfe diese neuen Anforderungen genug und plane eine Umsetzung.
+Danach beginne mit der Umsetzung.
+
+Bei dieser Ansicht steht robustheit, und schlankheit der UI im vordergrund. Implementiere so, dass der Ablauf funktioniert.
+
+Danach schreibe einen Bericht mit den Tätigkeiten unter documentation/r1View.md
+
+zusaätzlich behandelst du folgende Fragestellungen :
+
+Ist die Komponente nun funktionsbereit und welche Arbeiten müssten noch durchgeführt werden?
+wie könnte man die Komponente robuster machen und redundanzen vermeiden?
+sind genug tests für die komponenten vorhanden, die zumindest die Datenschnittstellen abtesten?
+Anbei noch etwas info, die dir helfen sollen, die richtige Impleemntierung der rabbit r1 eigenen eigenschaften vorzunehmen:

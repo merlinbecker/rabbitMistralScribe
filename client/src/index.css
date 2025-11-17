@@ -52,9 +52,20 @@
 }
 
 /* Rabbit R1 specific styles */
-html, body {
+.rabbit-view {
   max-width: 240px;
+  width: 240px;
+  max-height: 282px;
+  height: 282px;
   margin: 0 auto;
+  background-color: #000;
+  overflow: hidden;
+  position: relative;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
 }
