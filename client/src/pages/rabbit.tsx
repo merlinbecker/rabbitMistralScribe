@@ -51,8 +51,8 @@ export default function RabbitR1() {
     if (tokenFromUrl) {
       console.log('[RABBIT] Token found in URL, storing...');
       setStoredToken(tokenFromUrl, 30);
-      // Remove token from URL
-      window.history.replaceState({}, '', '/rabbit');
+      // Remove token from URL - stay on root path
+      window.history.replaceState({}, '', '/');
       // Force re-render with new token
       window.location.reload();
     }
@@ -203,7 +203,7 @@ export default function RabbitR1() {
         return;
       }
 
-      const token = localStorage.getItem("auth_token");
+      const token = getStoredToken();
       if (!token) {
         console.log("[RABBIT] No auth token found");
         setIsAuthenticated(false);
@@ -227,7 +227,7 @@ export default function RabbitR1() {
           const nowAuthenticated = response.ok;
 
           if (!nowAuthenticated) {
-            localStorage.removeItem("auth_token");
+            clearStoredToken();
           }
 
           console.log("[RABBIT] Auth state:", {
@@ -245,23 +245,20 @@ export default function RabbitR1() {
         }
       } catch (error) {
         console.error("[RABBIT] ❌ Auth check error:", error);
+        // Don't remove token on fetch errors - might be temporary network issue
         if (isMounted) {
-          setIsAuthenticated(false);
-          localStorage.removeItem("auth_token");
+          console.log("[RABBIT] Keeping token despite error - may be network issue");
         }
       }
     };
 
-    // This part was moved to the top of the component
-    // Check if we have a valid token
     console.log("[RABBIT] Checking localStorage for token...");
     checkAuth();
-
 
     return () => {
       isMounted = false;
     };
-  }, [isOnline, isAuthenticated]); // Added isAuthenticated to dependency array to re-run when auth state changes
+  }, [isOnline]); // Removed isAuthenticated from deps to prevent infinite loop
 
   // Auto-show settings when needed: if online, not recording, and either not authenticated or API key missing
   useEffect(() => {
