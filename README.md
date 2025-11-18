@@ -94,9 +94,9 @@ npm start
 
 ### Erste Schritte
 
-1. **Anmelden** mit GitHub OAuth
-2. **Settings konfigurieren**:
-   - Mistral API Key hinzufügen (BYOK)
+1. **Anmelden** mit GitHub OAuth (wird automatisch gefordert, wenn Sie nicht angemeldet sind)
+2. **Settings konfigurieren** (über Settings-Button in der Status-Leiste):
+   - Mistral API Key hinzufügen (BYOK) - wird automatisch angezeigt, wenn nicht konfiguriert
    - GitHub Repository für Markdown-Export konfigurieren (optional)
    - Zusammenfassungs-Template anpassen (optional)
 
