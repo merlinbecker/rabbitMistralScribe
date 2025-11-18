@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { LEDPixelDisplay } from "@/components/LEDPixelDisplay";
 import { RabbitStatusBar } from "@/components/RabbitStatusBar";
-import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { indexedDB } from "@/lib/indexedDB";
 import { queryClient, apiRequest, clearStoredToken, getStoredToken, setStoredToken } from "@/lib/queryClient";
 import { ImageBitmapProvider } from "@/lib/ledBitmap";
@@ -977,7 +977,11 @@ export default function RabbitR1() {
         {/* Settings button - positioned in bottom right corner */}
         {!isRecording && (
           <Button
-            onClick={handleOpenSettings}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleOpenSettings();
+            }}
             variant="ghost"
             size="icon"
             className="absolute bottom-2 right-2 text-white hover:bg-gray-800"
