@@ -9,15 +9,16 @@
 
 ## 1. Executive Summary
 
-Dieses Dokument beschreibt das Konzept für eine neue Frontend-Komponente **SyncMiddleware**, die alle Backend-Kommunikation, Authentifizierung und State-Management für asynchrone Requests in RabbitMistralScribe zentralisiert.
+Dieses Dokument beschreibt das Konzept für eine neue Frontend-Komponente **SyncMiddleware**, die als vereinheitlichte Abstraktionsschicht um TanStack Query alle Backend-Kommunikation, Authentifizierung und State-Management für Requests in RabbitMistralScribe zentralisiert.
 
 ### Kernziele
-- ✅ Zentralisierung aller Backend-Kommunikation
-- ✅ Automatische Token-Validierung und Login-Flow
-- ✅ Settings-Validierung (Mistral API Key)
+- ✅ Vollständige Vereinheitlichung mit TanStack Query (Wrapper für alle Requests)
+- ✅ Zentralisierung aller Backend-Kommunikation (Queries + Mutations)
+- ✅ Automatische Token-Validierung und Login-Flow für **alle** Operationen
+- ✅ Settings-Validierung (Mistral API Key) vor kritischen Requests
 - ✅ Event-basierte Architektur mit Request Queue
 - ✅ Offline-First Support mit automatischer Sync
-- ✅ Reduktion von Code-Duplikation
+- ✅ Reduktion von Code-Duplikation und konsistente Developer-Experience
 
 ---
 
@@ -38,6 +39,7 @@ Dieses Dokument beschreibt das Konzept für eine neue Frontend-Komponente **Sync
 3. **Manuelle Queue-Verwaltung:** Upload-Logic direkt in `rabbit.tsx` eingebettet
 4. **Unklare Fehlerbehandlung:** 401-Errors werden individuell behandelt
 5. **Keine konsistente Event-Kommunikation:** Callback-basiert statt Event-basiert
+6. **Inkonsistente API:** TanStack Query für GET, manuelle Fetch-Calls für POST/PATCH/DELETE
 
 ### 2.2 Anforderungen aus Issue
 
@@ -54,7 +56,7 @@ Dieses Dokument beschreibt das Konzept für eine neue Frontend-Komponente **Sync
 - **NF1:** Minimaler Overhead (< 50ms pro Request)
 - **NF2:** Testbarkeit durch Dependency Injection
 - **NF3:** Type-Safety mit TypeScript
-- **NF4:** Kompatibilität mit TanStack Query
+- **NF4:** Vollständige Integration mit TanStack Query (vereinheitlichter Ansatz)
 - **NF5:** Keine Breaking Changes an existierendem Code
 
 ---
@@ -84,8 +86,8 @@ Dieses Dokument beschreibt das Konzept für eine neue Frontend-Komponente **Sync
                       │ Validated Requests
                       ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Existing Infrastructure                         │
-│    queryClient.ts, TanStack Query, IndexedDB                │
+│           Unified Backend Communication Layer                │
+│    SyncMiddleware wraps TanStack Query + IndexedDB          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -289,127 +291,232 @@ class SettingsValidator implements Validator {
 }
 ```
 
-### 3.3 Integration mit TanStack Query
+### 3.3 Vereinheitlichte Integration mit TanStack Query
 
-**Problem:** TanStack Query ist bereits etabliert für GET-Requests
+**Ansatz:** SyncMiddleware als zentrale Abstraktionsschicht für **alle** Backend-Kommunikation
 
-**Lösung:** Hybrid-Ansatz - SyncMiddleware nur für kritische Operationen
+**Lösung:** Vollständige Integration - SyncMiddleware wraps TanStack Query für alle Operationen
 
 ```typescript
-// Kritische Operationen (Upload, Settings Update) über SyncMiddleware
-syncMiddleware.enqueueRequest({
-  type: 'upload',
+// ALLE Operationen (Queries + Mutations) über SyncMiddleware
+// Upload mit voller Validation
+const { execute: upload } = useSyncRequest('upload', {
   priority: RequestPriority.HIGH,
-  payload: { audioBlob, recordingId },
-  requiresSettings: true
+  requiresSettings: true,
+  requiresAuth: true
 });
 
-// Einfache Reads bleiben bei TanStack Query
-const { data } = useQuery({
-  queryKey: ['/api/recordings'],
-  // ... existing config
+// GET-Requests mit automatischer Auth-Validation
+const { data, isLoading } = useSyncQuery('/api/recordings', {
+  requiresAuth: true,
+  priority: RequestPriority.MEDIUM
+});
+
+// Settings-Update
+const { execute: updateSettings } = useSyncRequest('settings:update', {
+  priority: RequestPriority.HIGH,
+  requiresAuth: true
 });
 ```
 
-**Integration-Layer:**
+**Architektur-Layer:**
 ```typescript
 class SyncMiddleware {
-  // Wrapper für TanStack Mutations
-  async executeMutation<T>(
-    mutationFn: () => Promise<T>,
-    options: RequestOptions
-  ): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const requestId = this.enqueueRequest({
+  private queryClient: QueryClient;
+  
+  // Wrapper für TanStack Queries (GET-Requests)
+  createQuery<T>(
+    queryKey: QueryKey,
+    queryFn: QueryFunction<T>,
+    options: SyncQueryOptions
+  ): UseQueryResult<T> {
+    // Validation vor Query-Ausführung
+    const validatedQueryFn: QueryFunction<T> = async (context) => {
+      await this.runValidationChain(options);
+      return queryFn(context);
+    };
+    
+    return useQuery({
+      queryKey,
+      queryFn: validatedQueryFn,
+      enabled: options.enabled && this.canExecute(options),
+      ...options.queryOptions
+    });
+  }
+  
+  // Wrapper für TanStack Mutations (POST, PATCH, DELETE)
+  createMutation<TData, TVariables>(
+    mutationFn: MutationFunction<TData, TVariables>,
+    options: SyncMutationOptions
+  ): UseMutationResult<TData, TVariables> {
+    const validatedMutationFn = async (variables: TVariables) => {
+      // Request in Queue einreihen mit Validation
+      return this.enqueueRequest({
         type: options.type,
         priority: options.priority,
-        payload: options.payload,
+        payload: variables,
         requiresSettings: options.requiresSettings,
-        executor: mutationFn
+        requiresAuth: options.requiresAuth,
+        executor: () => mutationFn(variables)
       });
-      
-      // Listen for completion
-      eventBus.once('request:success', (data) => {
-        if (data.id === requestId) resolve(data.data);
-      });
-      
-      eventBus.once('request:error', (data) => {
-        if (data.id === requestId) reject(data.error);
-      });
+    };
+    
+    return useMutation({
+      mutationFn: validatedMutationFn,
+      onSuccess: (data) => {
+        // Event emittieren
+        this.eventBus.emit('request:success', { 
+          id: options.type, 
+          data 
+        });
+        options.onSuccess?.(data);
+      },
+      ...options.mutationOptions
     });
+  }
+  
+  // Low-level API für komplexe Fälle
+  async enqueueRequest<T>(options: EnqueueOptions): Promise<T> {
+    // ... existing implementation
   }
 }
 ```
 
-### 3.4 React Hook Interface
+### 3.4 React Hook Interface (Vereinheitlicht)
 
-**Ziel:** Einfache Integration in React-Komponenten
+**Ziel:** Konsistente API für alle Backend-Operationen basierend auf TanStack Query
 
 ```typescript
-// Hook für SyncMiddleware-Requests
+// Hook für GET-Requests (ersetzt useQuery)
+function useSyncQuery<TData = unknown>(
+  queryKey: QueryKey,
+  options?: {
+    requiresAuth?: boolean;
+    requiresSettings?: boolean;
+    priority?: RequestPriority;
+    enabled?: boolean;
+    queryOptions?: Omit<UseQueryOptions<TData>, 'queryKey' | 'queryFn'>;
+  }
+): UseQueryResult<TData> {
+  const syncMiddleware = useSyncMiddleware();
+  
+  return syncMiddleware.createQuery<TData>(
+    queryKey,
+    async () => {
+      // Validation wird automatisch durchgeführt
+      const url = Array.isArray(queryKey) ? queryKey.join('/') : queryKey;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${getStoredToken()}`
+        }
+      });
+      if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+      return response.json();
+    },
+    options
+  );
+}
+
+// Hook für Mutations (ersetzt useMutation)
+function useSyncMutation<TData = unknown, TVariables = unknown>(
+  type: RequestType,
+  mutationFn: MutationFunction<TData, TVariables>,
+  options?: {
+    priority?: RequestPriority;
+    requiresSettings?: boolean;
+    requiresAuth?: boolean;
+    onSuccess?: (data: TData) => void;
+    onError?: (error: Error) => void;
+    mutationOptions?: Omit<UseMutationOptions<TData, TVariables>, 'mutationFn'>;
+  }
+): UseMutationResult<TData, TVariables> {
+  const syncMiddleware = useSyncMiddleware();
+  
+  return syncMiddleware.createMutation<TData, TVariables>(
+    mutationFn,
+    {
+      type,
+      priority: options?.priority || RequestPriority.MEDIUM,
+      requiresSettings: options?.requiresSettings || false,
+      requiresAuth: options?.requiresAuth ?? true,
+      onSuccess: options?.onSuccess,
+      onError: options?.onError,
+      mutationOptions: options?.mutationOptions
+    }
+  );
+}
+
+// Vereinfachter Hook für häufige Operationen (Convenience-Wrapper)
 function useSyncRequest<TData = unknown, TPayload = unknown>(
   type: RequestType,
   options?: {
     priority?: RequestPriority;
     requiresSettings?: boolean;
-    onSuccess?: (data: TData) => void;
-    onError?: (error: Error) => void;
+    requiresAuth?: boolean;
   }
 ) {
-  const [status, setStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
-  const [data, setData] = useState<TData | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-
-  const execute = useCallback(async (payload: TPayload) => {
-    setStatus('pending');
-    setError(null);
-    
-    try {
-      const result = await syncMiddleware.enqueueRequest({
-        type,
-        priority: options?.priority || RequestPriority.MEDIUM,
-        payload,
-        requiresSettings: options?.requiresSettings
-      });
-      
-      setData(result);
-      setStatus('success');
-      options?.onSuccess?.(result);
-      return result;
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
-      setError(error);
-      setStatus('error');
-      options?.onError?.(error);
-      throw error;
-    }
-  }, [type, options]);
-
+  const mutation = useSyncMutation<TData, TPayload>(
+    type,
+    async (payload: TPayload) => {
+      // Default implementation - kann überschrieben werden
+      const response = await apiRequest('POST', `/api/${type}`, payload);
+      return response as TData;
+    },
+    options
+  );
+  
   return {
-    execute,
-    status,
-    data,
-    error,
-    isLoading: status === 'pending',
-    isSuccess: status === 'success',
-    isError: status === 'error'
+    execute: mutation.mutate,
+    executeAsync: mutation.mutateAsync,
+    isLoading: mutation.isPending,
+    isSuccess: mutation.isSuccess,
+    isError: mutation.isError,
+    data: mutation.data,
+    error: mutation.error
   };
 }
 
-// Usage Example
-function UploadComponent() {
-  const { execute: uploadRecording, isLoading } = useSyncRequest('upload', {
+// Usage Examples - Vereinheitlichte API
+function RecordingsComponent() {
+  // GET-Request mit automatischer Auth-Validation
+  const { data: recordings, isLoading } = useSyncQuery<Recording[]>('/api/recordings', {
+    requiresAuth: true,
+    priority: RequestPriority.MEDIUM
+  });
+  
+  // Upload mit voller Validation (POST)
+  const { execute: uploadRecording, isLoading: isUploading } = useSyncRequest('upload', {
     priority: RequestPriority.HIGH,
     requiresSettings: true,
-    onSuccess: (data) => console.log('Upload success:', data),
-    onError: (error) => console.error('Upload failed:', error)
+    requiresAuth: true
   });
+  
+  // Settings-Update (PATCH)
+  const updateSettings = useSyncMutation<UserSettings, UpdateUserSettings>(
+    'settings:update',
+    async (settings) => apiRequest('PATCH', '/api/settings', settings),
+    {
+      priority: RequestPriority.HIGH,
+      requiresAuth: true,
+      onSuccess: () => console.log('Settings updated')
+    }
+  );
   
   const handleUpload = async () => {
     await uploadRecording({ audioBlob, recordingId });
   };
   
-  return <button onClick={handleUpload} disabled={isLoading}>Upload</button>;
+  const handleSettingsUpdate = () => {
+    updateSettings.mutate({ mistralApiKey: 'new-key' });
+  };
+  
+  return (
+    <div>
+      {isLoading ? <Spinner /> : <RecordingsList recordings={recordings} />}
+      <button onClick={handleUpload} disabled={isUploading}>Upload</button>
+      <button onClick={handleSettingsUpdate}>Update Settings</button>
+    </div>
+  );
 }
 ```
 
@@ -888,23 +995,62 @@ await uploadRecording({ localId, audioBlob, recordingTime });
 
 ## 6. Herausforderungen & Lösungen
 
-### 6.1 Challenge: Kompatibilität mit TanStack Query
+### 6.1 Vereinheitlichung mit TanStack Query
 
-**Problem:** TanStack Query ist etabliert, SyncMiddleware darf nicht kollidieren
+**Ansatz:** SyncMiddleware als umfassende Wrapper-Schicht um TanStack Query
 
-**Lösung:**
-- SyncMiddleware nur für kritische Mutations (POST, PATCH, DELETE)
-- GET-Requests bleiben bei TanStack Query
-- Wrapper-Layer für TanStack Mutations (optional)
-- Event-basierte Invalidierung von Query-Cache
+**Vorteile der Vereinheitlichung:**
+- ✅ Konsistente API für alle Backend-Operationen (Queries + Mutations)
+- ✅ Validation Chain gilt für **alle** Requests, nicht nur Mutations
+- ✅ Einheitliches Error-Handling und Event-System
+- ✅ GET-Requests profitieren von Auth/Settings-Validation
+- ✅ Entwickler müssen nur eine API lernen (useSyncQuery/useSyncMutation)
+
+**Implementation:**
+- SyncMiddleware wraps `useQuery` und `useMutation` von TanStack Query
+- Validation-Chain läuft **vor** jeder Query/Mutation-Ausführung
+- Alle TanStack Query Features bleiben verfügbar (Caching, Refetching, etc.)
+- Event-basierte Invalidierung von Query-Cache bei Mutations
 
 **Beispiel:**
 ```typescript
-// TanStack Query reagiert auf SyncMiddleware-Events
-eventBus.on('request:success', (data) => {
-  if (data.type === 'upload') {
-    queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+// Unified API für alle Operationen
+const syncMiddleware = useSyncMiddleware();
+
+// GET mit Auto-Validation
+const recordings = useSyncQuery('/api/recordings', {
+  requiresAuth: true  // Token-Check vor Request
+});
+
+// POST/PATCH/DELETE mit voller Validation-Chain
+const upload = useSyncMutation('upload', uploadFn, {
+  requiresAuth: true,
+  requiresSettings: true,
+  onSuccess: () => {
+    // Auto-Invalidierung verwandter Queries
+    syncMiddleware.invalidateQueries(['/api/recordings']);
   }
+});
+
+// Events für Cross-Component-Kommunikation
+syncMiddleware.getEventBus().on('request:success', (data) => {
+  if (data.type === 'upload') {
+    toast.success('Upload completed');
+  }
+});
+```
+
+**Migration-Strategie:**
+```typescript
+// Before: Direktes TanStack Query
+const { data } = useQuery({ queryKey: ['/api/recordings'] });
+const mutation = useMutation({ mutationFn: uploadFn });
+
+// After: Unified SyncMiddleware
+const { data } = useSyncQuery('/api/recordings', { requiresAuth: true });
+const mutation = useSyncMutation('upload', uploadFn, { 
+  requiresAuth: true, 
+  requiresSettings: true 
 });
 ```
 
@@ -1042,20 +1188,29 @@ class TestEventBus extends EventBus {
 
 **Entscheidung:** ❌ Verworfen - zu inflexibel
 
-### 7.2 Alternative B: React Query Middleware
+### 7.2 Alternative B: Direkte TanStack Query Middleware
 
-**Idee:** Custom Middleware für TanStack Query
+**Idee:** Custom Middleware direkt in TanStack Query ohne Wrapper-Schicht
 
 **Pro:**
 - ✅ Native Integration mit Query
 - ✅ Bereits vertraute API
 
 **Contra:**
-- ❌ Nur für Query/Mutations, nicht für generische Requests
-- ❌ Keine Queue-Funktionalität
-- ❌ Komplexe Custom-Implementation nötig
+- ❌ TanStack Query bietet keine native Middleware-API
+- ❌ Keine Queue-Funktionalität für Offline-Persistenz
+- ❌ Komplexe Custom-Implementation in Query internals nötig
+- ❌ Event-System müsste separat implementiert werden
+- ❌ Schwierig, Validation-Chain zu integrieren
 
 **Entscheidung:** ❌ Verworfen - zu limitiert
+
+**Gewählter Ansatz:** 
+Stattdessen SyncMiddleware als **umfassende Wrapper-Schicht** um TanStack Query, die:
+- ✅ Alle TanStack Query Features beibehält
+- ✅ Validation-Chain, Queue und Events hinzufügt
+- ✅ Vereinheitlichte API für alle Requests bietet
+- ✅ Schrittweise Migration ermöglicht
 
 ### 7.3 Alternative C: Redux Saga/Thunk
 
@@ -1078,12 +1233,13 @@ class TestEventBus extends EventBus {
 
 **Gewinner-Eigenschaften:**
 - ✅ Leichtgewichtig (< 10KB gzipped)
-- ✅ Framework-agnostisch mit React-Adapter
+- ✅ Vollständig vereinheitlicht mit TanStack Query (keine parallelen APIs)
 - ✅ Event-basiert (entkoppelt)
 - ✅ Queue + Retry + Validation in einem
-- ✅ Minimale Breaking Changes
+- ✅ Minimale Breaking Changes (Wrapper-Ansatz)
 - ✅ Testbar durch DI
 - ✅ Schrittweise Migration möglich
+- ✅ Konsistente Entwickler-Experience für alle Backend-Operationen
 
 ---
 
@@ -1301,8 +1457,9 @@ describe('SyncMiddleware - Integration', () => {
 **Wichtige Entscheidungen dokumentieren:**
 - ADR-001: Warum Event-basiert statt Callback-basiert?
 - ADR-002: Warum eigene Queue statt Bull/Bee?
-- ADR-003: Warum Hybrid-Ansatz mit TanStack Query?
+- ADR-003: Warum vollständig vereinheitlichter Ansatz mit TanStack Query (Wrapper statt Hybrid)?
 - ADR-004: Validation-Chain-Reihenfolge
+- ADR-005: Warum alle Requests über SyncMiddleware statt nur Mutations?
 
 ### 10.3 Code-Kommentare
 
@@ -1349,17 +1506,17 @@ async enqueueRequest<T>(options: EnqueueOptions): Promise<T>
 | Validators | 4x Validators + Tests | 16h | 1 |
 | SyncMiddleware | Core + Tests | 16h | 1 |
 | **Phase 2: React** | | | |
-| Hooks | useSyncRequest + Context | 8h | 2 |
+| Hooks | useSyncQuery + useSyncMutation + Context | 12h | 2 |
 | UI-Components | Modals | 8h | 2 |
 | Integration Tests | E2E-Setup | 8h | 2 |
 | **Phase 3: Migration** | | | |
-| Upload-Migration | rabbit.tsx | 8h | 3 |
-| Settings-Migration | Settings-Komponenten | 8h | 3 |
-| Cleanup | Code-Removal | 4h | 3 |
+| Query-Migration | Alle useQuery zu useSyncQuery | 12h | 3 |
+| Mutation-Migration | Alle useMutation zu useSyncMutation | 12h | 3 |
+| Cleanup | Alte queryClient.ts Code-Removal | 4h | 3 |
 | **Phase 4: Polish** | | | |
 | Monitoring | Metrics + Dashboard | 8h | 4 |
 | Dokumentation | Guides + Docs | 8h | 4 |
-| **Total** | | **120h** | **4 Wochen** |
+| **Total** | | **132h** | **4 Wochen** |
 
 ### 11.2 Risiken
 
@@ -1378,31 +1535,35 @@ async enqueueRequest<T>(options: EnqueueOptions): Promise<T>
 
 **SyncMiddleware löst folgende Probleme:**
 ✅ Zentralisierte Backend-Kommunikation  
-✅ Automatische Auth & Settings-Validierung  
+✅ Automatische Auth & Settings-Validierung für **alle** Requests  
 ✅ Event-basierte Architektur  
 ✅ Request-Queueing mit Retry-Logic  
-✅ Minimale Breaking Changes  
+✅ Minimale Breaking Changes (Wrapper-Ansatz)  
+✅ Vereinheitlichte API für Queries und Mutations
 
 **Vorteile:**
 - Reduziert Code-Duplikation um ~40%
 - Verbessert Testbarkeit
+- Konsistente Entwickler-Experience (eine API statt zwei)
+- Validation-Chain gilt für alle Backend-Operationen
 - Klare Separation of Concerns
 - Skalierbar für zukünftige Features (WebSocket-Integration, etc.)
 
 **Nachteile:**
-- Initiale Entwicklungszeit: ~120h
+- Initiale Entwicklungszeit: ~132h
 - Team muss neue Abstraction lernen
-- Zusätzliche Komplexität für einfache Requests
+- Alle GET-Requests müssen migriert werden (nicht nur Mutations)
 
 ### 12.2 Empfehlung
 
-**✅ EMPFOHLEN** - SyncMiddleware sollte implementiert werden.
+**✅ EMPFOHLEN** - SyncMiddleware mit vollständiger TanStack Query Integration sollte implementiert werden.
 
 **Begründung:**
-1. **Code-Quality:** Massiv verbesserte Architektur
+1. **Code-Quality:** Massiv verbesserte Architektur durch Vereinheitlichung
 2. **Maintainability:** Einfacher zu erweitern und zu testen
-3. **User-Experience:** Konsistente Auth/Settings-Flows
-4. **Zukunftssicherheit:** Foundation für weitere Features
+3. **Developer-Experience:** Eine konsistente API statt paralleler Systeme
+4. **User-Experience:** Konsistente Auth/Settings-Flows für alle Operationen
+5. **Zukunftssicherheit:** Foundation für weitere Features
 
 **Vorschlag:**
 - Start mit Phase 1 (Infrastruktur) als Proof-of-Concept
