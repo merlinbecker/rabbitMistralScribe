@@ -4,7 +4,7 @@ import { LEDPixelDisplay } from "@/components/LEDPixelDisplay";
 import { RabbitStatusBar } from "@/components/RabbitStatusBar";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { indexedDB } from "@/lib/indexedDB";
-import { queryClient, apiRequest, clearStoredToken, getStoredToken } from "@/lib/queryClient";
+import { queryClient, apiRequest, clearStoredToken, getStoredToken, setStoredToken } from "@/lib/queryClient";
 import { ImageBitmapProvider } from "@/lib/ledBitmap";
 import type { LEDBitmap } from "@/lib/ledBitmap";
 import {
@@ -44,6 +44,20 @@ const MAX_RECORDING_TIME = 817; // 13:37 in seconds
 export default function RabbitR1() {
   console.log("[RABBIT] Component mounted");
 
+  // Process token from URL first, before any auth check
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tokenFromUrl = params.get('token');
+    if (tokenFromUrl) {
+      console.log('[RABBIT] Token found in URL, storing...');
+      setStoredToken(tokenFromUrl, 30);
+      // Remove token from URL
+      window.history.replaceState({}, '', '/rabbit');
+      // Force re-render with new token
+      window.location.reload();
+    }
+  }, []);
+
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -55,10 +69,14 @@ export default function RabbitR1() {
     "idle" | "uploading" | "transcribing" | "complete" | "failed"
   >("idle");
   const [clickCount, setClickCount] = useState(0);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const token = getStoredToken();
+    console.log('[RABBIT] Initial auth check - token exists:', !!token);
+    return !!token;
+  });
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [bitmapLoadedTimestamp, setBitmapLoadedTimestamp] = useState<number>(0);
-  
+
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
@@ -116,7 +134,7 @@ export default function RabbitR1() {
         setShowLoginPrompt(true);
         return;
       }
-      
+
       notify({
         title: 'Fehler',
         description: 'Einstellungen konnten nicht gespeichert werden.',
@@ -234,64 +252,16 @@ export default function RabbitR1() {
       }
     };
 
-    // Check if returning from auth
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
+    // This part was moved to the top of the component
+    // Check if we have a valid token
+    console.log("[RABBIT] Checking localStorage for token...");
+    checkAuth();
 
-    if (token) {
-      console.log("[RABBIT] 🔄 Returning from GitHub auth - saving token");
-
-      // Save token to localStorage
-      localStorage.setItem("auth_token", token);
-
-      // Clean URL immediately
-      window.history.replaceState({}, "", "/");
-      console.log("[RABBIT] ✅ Token saved, URL cleaned");
-
-      // Mark as authenticated immediately
-      setIsAuthenticated(true);
-
-      // Sync pending recordings immediately (token is already in localStorage)
-      // Don't wait for state update - use token directly
-      const syncImmediately = async () => {
-        try {
-          const pendingRecordings = await indexedDB.getAllRecordings();
-
-          if (pendingRecordings.length === 0) {
-            return;
-          }
-
-          console.log(
-            `[RABBIT] Syncing ${pendingRecordings.length} pending recording(s) via HTTP`,
-          );
-
-          for (const pending of pendingRecordings) {
-            if (pending.status === "queued" || pending.status === "failed") {
-              await uploadRecording(
-                pending.id,
-                pending.audioBlob,
-                pending.duration,
-              );
-            }
-          }
-        } catch (error) {
-          console.error("[RABBIT] Error syncing pending recordings:", error);
-        }
-      };
-
-      syncImmediately().catch((err) =>
-        console.error("[RABBIT] Failed to sync recordings:", err),
-      );
-    } else {
-      // Check if we have a valid token
-      console.log("[RABBIT] No token in URL, checking localStorage...");
-      checkAuth();
-    }
 
     return () => {
       isMounted = false;
     };
-  }, []); // Only run once on mount
+  }, [isOnline, isAuthenticated]); // Added isAuthenticated to dependency array to re-run when auth state changes
 
   // Auto-show settings when needed: if online, not recording, and either not authenticated or API key missing
   useEffect(() => {
@@ -721,7 +691,7 @@ export default function RabbitR1() {
         if (recording?.status === "transcribed") {
           console.log("[RABBIT] ✅ Transcription completed successfully!");
           console.log("[RABBIT] 🗑️ Deleting local copy from IndexedDB");
-          
+
           // Success - delete local copy
           await indexedDB.deleteRecording(localId);
           await queryClient.invalidateQueries({
@@ -730,7 +700,7 @@ export default function RabbitR1() {
           setTranscriptionStatus("complete");
 
           console.log("[RABBIT] ✅ Local copy deleted - recording fully processed");
-          
+
           // Reset after a few seconds
           setTimeout(() => {
             console.log("[RABBIT] Resetting transcription status to idle");
@@ -810,7 +780,7 @@ export default function RabbitR1() {
       const needSync = pendingRecordings.filter(
         (r) => r.status === "queued" || r.status === "failed"
       );
-      
+
       console.log(
         `[RABBIT] 🔄 Found ${needSync.length} recording(s) that need syncing`,
       );
@@ -823,7 +793,7 @@ export default function RabbitR1() {
       for (let i = 0; i < needSync.length; i++) {
         const pending = needSync[i];
         console.log(`[RABBIT] 📤 Syncing ${i + 1}/${needSync.length}: ${pending.id} (status: ${pending.status})`);
-        
+
         await uploadRecording(
           pending.id,
           pending.audioBlob,
@@ -895,16 +865,16 @@ export default function RabbitR1() {
 
   const handleSaveSettings = () => {
     const repoData = selectedRepo ? selectedRepo.split('/') : null;
-    
+
     const updates: UpdateUserSettings = {};
-    
+
     console.log('[RABBIT SETTINGS] Preparing to save:', {
       hasApiKeyInput: !!apiKey,
       apiKeyLength: apiKey.length,
       hasSelectedRepo: !!selectedRepo,
       hasSummaryTemplate: summaryTemplate !== ''
     });
-    
+
     if (apiKey) updates.mistralApiKey = apiKey;
     if (repoData) {
       updates.githubRepoOwner = repoData[0];
@@ -913,9 +883,9 @@ export default function RabbitR1() {
     if (summaryTemplate !== '') {
       updates.summaryTemplate = summaryTemplate;
     }
-    
+
     console.log('[RABBIT SETTINGS] Sending updates:', updates);
-    
+
     updateSettingsMutation.mutate(updates);
   };
 
@@ -1099,24 +1069,24 @@ export default function RabbitR1() {
                     <p className="text-gray-400 text-xs mb-2">
                       Wo Notizen gespeichert werden
                     </p>
-                    
+
                     {reposLoading ? (
                       <div className="h-8 bg-gray-700 animate-pulse rounded-md" />
                     ) : (
-                      <Select 
+                      <Select
                         value={selectedRepo || `${settings?.githubRepoOwner}/${settings?.githubRepoName}`}
                         onValueChange={setSelectedRepo}
                       >
-                        <SelectTrigger 
-                          id="github-repo" 
+                        <SelectTrigger
+                          id="github-repo"
                           className="h-8 text-xs bg-gray-700 border-gray-600 text-white"
                         >
                           <SelectValue placeholder="Repository auswählen" />
                         </SelectTrigger>
                         <SelectContent className="bg-gray-800 border-gray-700">
                           {repos.map((repo) => (
-                            <SelectItem 
-                              key={repo.id} 
+                            <SelectItem
+                              key={repo.id}
                               value={repo.full_name}
                               className="text-white text-xs"
                             >
@@ -1174,7 +1144,7 @@ export default function RabbitR1() {
               >
                 {updateSettingsMutation.isPending ? 'Speichern...' : 'Einstellungen speichern'}
               </Button>
-              
+
               {/* Logout Button */}
               <Button
                 onClick={handleLogout}
