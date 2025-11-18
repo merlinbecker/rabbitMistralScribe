@@ -1,0 +1,32 @@
+  [RABBIT] ❌ Auth check error: TypeError: Failed to fetch
+    at checkAuth (src/pages/rabbit.tsx:184:32)
+    at src/pages/rabbit.tsx:217:5
+    at commitHookEffectListMount (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:16915:34)
+    at commitPassiveMountOnFiber (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:18156:19)
+    at commitPassiveMountEffects_complete (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:18129:17)
+    at commitPassiveMountEffects_begin (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:18119:15)
+    at commitPassiveMountEffects (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:18109:11)
+    at flushPassiveEffectsImpl (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:19490:11)
+    at flushPassiveEffects (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:19447:22)
+    at performSyncWorkOnRoot (@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=3fe11a4e:18868:11)
+overrideMethod @ chrome-extension://g…ld/installHook.js:1
+checkAuth @ rabbit.tsx:209
+await in checkAuth
+(anonymous) @ rabbit.tsx:217
+commitHookEffectListMount @ chunk-RPCDYKBN.js:16915
+commitPassiveMountOnFiber @ chunk-RPCDYKBN.js:18156
+commitPassiveMountEffects_complete @ chunk-RPCDYKBN.js:18129
+commitPassiveMountEffects_begin @ chunk-RPCDYKBN.js:18119
+commitPassiveMountEffects @ chunk-RPCDYKBN.js:18109
+flushPassiveEffectsImpl @ chunk-RPCDYKBN.js:19490
+flushPassiveEffects @ chunk-RPCDYKBN.js:19447
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js:18868
+flushSyncCallbacks @ chunk-RPCDYKBN.js:9119
+commitRootImpl @ chunk-RPCDYKBN.js:19432
+commitRoot @ chunk-RPCDYKBN.js:19277
+finishConcurrentRender @ chunk-RPCDYKBN.js:18805
+performConcurrentWorkOnRoot @ chunk-RPCDYKBN.js:18718
+workLoop @ chunk-RPCDYKBN.js:197
+flushWork @ chunk-RPCDYKBN.js:176
+performWorkUntilDeadline @ chunk-RPCDYKBN.js:384
+Navigated to 
