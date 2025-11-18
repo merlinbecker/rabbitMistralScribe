@@ -29,6 +29,9 @@ export function setStoredToken(token: string, expiresInDays: number = 30): void 
     const expiryTime = Date.now() + (expiresInDays * 24 * 60 * 60 * 1000);
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+    
+    // Test: Alert when token is saved
+    alert(`✅ Auth Token gespeichert!\n\nToken-Länge: ${token.length}\nGültig für: ${expiresInDays} Tage\nAblauf: ${new Date(expiryTime).toLocaleString('de-DE')}`);
   } catch (e) {
     console.error('Error storing token in localStorage:', e);
   }
