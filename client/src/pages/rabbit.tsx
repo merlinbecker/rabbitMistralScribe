@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LEDPixelDisplay } from "@/components/LEDPixelDisplay";
 import { RabbitStatusBar } from "@/components/RabbitStatusBar";
-import { useOnlineStatus } from "@/hooks/use-online-status";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { indexedDB } from "@/lib/indexedDB";
 import { queryClient, clearStoredToken, getStoredToken, setStoredToken } from "@/lib/queryClient";
 import { useSyncRequest } from "@/hooks/useSyncRequest";
