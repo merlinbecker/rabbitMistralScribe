@@ -70,7 +70,7 @@ export class RequestQueue {
     this.processing = Math.max(0, this.processing - 1);
     
     // Remove from pending requests
-    for (const [key, request] of this.pendingRequests.entries()) {
+    for (const [key, request] of Array.from(this.pendingRequests.entries())) {
       if (request.id === requestId) {
         this.pendingRequests.delete(key);
         break;

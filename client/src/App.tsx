@@ -4,6 +4,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SyncMiddlewareProvider } from "@/contexts/SyncMiddlewareContext";
+import { AuthRequiredModal } from "@/components/AuthRequiredModal";
+import { SettingsRequiredModal } from "@/components/SettingsRequiredModal";
 import Recordings from "@/pages/recordings";
 import RabbitR1 from "@/pages/rabbit";
 import NotFound from "@/pages/not-found";
@@ -22,10 +25,14 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+        <SyncMiddlewareProvider>
+          <TooltipProvider>
+            <Toaster />
+            <AuthRequiredModal />
+            <SettingsRequiredModal />
+            <Router />
+          </TooltipProvider>
+        </SyncMiddlewareProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
