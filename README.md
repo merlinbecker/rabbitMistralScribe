@@ -271,11 +271,23 @@ MIT License - siehe [LICENSE](LICENSE) Datei für Details.
 - **Rabbit R1** für das innovative Hardware-Design
 - **Replit** für Hosting und Database
 
+## 📚 Dokumentation
+
+### Für Entwickler
+- 📖 **[arc42 Architekturdokumentation](arc42-documentation.md)** - Vollständige System-Architektur, Risiken, technische Schulden und Verbesserungsempfehlungen
+- 🔧 **[Quick Reference](Plans/QUICK_REFERENCE.md)** - Schnellreferenz für Entwickler
+- 🔍 **[OTEL Tracing](Plans/OTEL_Tracing.md)** - Geplantes Observability-Feature
+
+### Für Benutzer
+- 👤 **[User Guide](docs/USER_GUIDE.md)** - Ausführliche Benutzeranleitung
+- 🛠️ **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Problemlösungen und häufige Fragen
+
 ## 📞 Support
 
 Bei Fragen oder Problemen:
 - Öffne ein [GitHub Issue](https://github.com/merlinbecker/rabbitMistralScribe/issues)
 - Siehe [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
+- Für Architektur-Details siehe [arc42 Dokumentation](arc42-documentation.md)
 
 ---
 
