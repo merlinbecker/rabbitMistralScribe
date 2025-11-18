@@ -242,18 +242,24 @@ export class TranscriptionWorker {
       status: 'transcribed',
     });
 
-    // Save to GitHub if configured
-    if (settings.githubRepoOwner && settings.githubRepoName) {
-      console.log('[WORKER] Saving to GitHub...');
-      await this.githubService.saveRecordingToGitHub({ recordingId, userId });
-    }
-
-    // Delete audio file to save database space
+    // Only delete audio file if transcription was successful
+    // This ensures we can retry failed jobs
     console.log('[WORKER] 🗑️ Deleting audio file from database to save space...');
     await this.storage.updateRecording(recordingId, {
       audioUrl: undefined,
     });
     console.log('[WORKER] ✅ Audio file deleted successfully');
+
+    // Save to GitHub if configured (after successful transcription and cleanup)
+    if (settings.githubRepoOwner && settings.githubRepoName) {
+      console.log('[WORKER] Saving to GitHub...');
+      try {
+        await this.githubService.saveRecordingToGitHub({ recordingId, userId });
+      } catch (error) {
+        console.warn('[WORKER] ⚠️ GitHub save failed, but transcription was successful:', error);
+        // Don't throw - transcription was successful, GitHub is optional
+      }
+    }
 
     console.log('[WORKER] Transcription completed successfully');
   }
