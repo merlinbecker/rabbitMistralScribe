@@ -9,8 +9,8 @@ import type { RequestType, RequestPriority, SyncRequestOptions } from '@/service
 import { apiRequest } from '@/lib/queryClient';
 
 interface UseSyncRequestResult<TData = unknown, TPayload = unknown> {
-  execute: (payload: TPayload) => Promise<TData>;
-  executeAsync: (payload: TPayload) => Promise<TData>;
+  execute: (payload: TPayload, customExecutor?: () => Promise<TData>) => Promise<TData>;
+  executeAsync: (payload: TPayload, customExecutor?: () => Promise<TData>) => Promise<TData>;
   isLoading: boolean;
   isSuccess: boolean;
   isError: boolean;
@@ -57,7 +57,7 @@ export function useSyncRequest<TData = unknown, TPayload = unknown>(
   }, []);
 
   const execute = useCallback(
-    async (payload: TPayload): Promise<TData> => {
+    async (payload: TPayload, customExecutor?: () => Promise<TData>): Promise<TData> => {
       setIsLoading(true);
       setIsError(false);
       setError(null);
@@ -69,11 +69,11 @@ export function useSyncRequest<TData = unknown, TPayload = unknown>(
           payload,
           requiresSettings: options?.requiresSettings,
           requiresAuth: options?.requiresAuth,
-          executor: async () => {
+          executor: customExecutor || (async () => {
             // Default implementation - makes POST request
             const response = await apiRequest('POST', `/api/${type}`, payload);
             return response as TData;
-          },
+          }),
         });
 
         setData(result);

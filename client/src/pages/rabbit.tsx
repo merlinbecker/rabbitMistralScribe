@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { LEDPixelDisplay } from "@/components/LEDPixelDisplay";
 import { RabbitStatusBar } from "@/components/RabbitStatusBar";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { indexedDB } from "@/lib/indexedDB";
-import { queryClient, apiRequest, clearStoredToken, getStoredToken, setStoredToken } from "@/lib/queryClient";
+import { queryClient, clearStoredToken, getStoredToken, setStoredToken } from "@/lib/queryClient";
+import { useSyncRequest } from "@/hooks/useSyncRequest";
+import { RequestPriority } from "@/services/syncMiddleware/types";
+import { useSyncMiddleware } from "@/contexts/SyncMiddlewareContext";
 import { ImageBitmapProvider } from "@/lib/ledBitmap";
 import type { LEDBitmap } from "@/lib/ledBitmap";
 import {
@@ -85,6 +88,7 @@ export default function RabbitR1() {
 
   const isOnline = useOnlineStatus();
   const { notify } = useStatusNotification();
+  const { syncMiddleware, setIsRecording: setSyncRecording } = useSyncMiddleware();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,37 +115,59 @@ export default function RabbitR1() {
     enabled: isAuthenticated && isOnline,
   });
 
-  // Update settings mutation with Bearer token
-  const updateSettingsMutation = useMutation({
-    mutationFn: async (data: UpdateUserSettings) => {
-      return await apiRequest('PATCH', '/api/settings', data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/settings'] });
-      notify({
-        title: 'Einstellungen gespeichert',
-        description: 'Ihre Änderungen wurden erfolgreich gespeichert.',
-        type: 'success',
-      });
-      setShowSettings(false);
-    },
-    onError: (error: any) => {
-      // Check for authentication errors
-      if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-        console.log('[RABBIT] Authentication failed - clearing token and redirecting');
-        clearStoredToken();
-        setIsAuthenticated(false);
-        setShowLoginPrompt(true);
-        return;
-      }
+  // Update settings using SyncMiddleware
+  const { execute: updateSettings, isLoading: isUpdatingSettings } = useSyncRequest<UserSettings, UpdateUserSettings>(
+    'settings:update',
+    {
+      priority: RequestPriority.HIGH,
+      requiresAuth: true,
+    }
+  );
 
-      notify({
-        title: 'Fehler',
-        description: 'Einstellungen konnten nicht gespeichert werden.',
-        type: 'error',
-      });
-    },
-  });
+  // Listen for settings update events
+  useEffect(() => {
+    const unsubscribe = syncMiddleware.getEventBus().on('request:success', (data) => {
+      if (data.id.includes('settings:update')) {
+        queryClient.invalidateQueries({ queryKey: ['/api/settings'] });
+        notify({
+          title: 'Einstellungen gespeichert',
+          description: 'Ihre Änderungen wurden erfolgreich gespeichert.',
+          type: 'success',
+        });
+        setShowSettings(false);
+        
+        // Emit settings:updated event for other components
+        syncMiddleware.getEventBus().emit('settings:updated', { 
+          settings: data.data 
+        });
+      }
+    });
+
+    const unsubscribeError = syncMiddleware.getEventBus().on('request:error', (data) => {
+      if (data.id.includes('settings:update')) {
+        notify({
+          title: 'Fehler',
+          description: 'Einstellungen konnten nicht gespeichert werden.',
+          type: 'error',
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeError();
+    };
+  }, [syncMiddleware, notify]);
+
+  // Upload recording using SyncMiddleware
+  const { execute: uploadRecordingRequest } = useSyncRequest<Recording, { audioBlob: Blob; duration: number }>(
+    'upload',
+    {
+      priority: RequestPriority.HIGH,
+      requiresAuth: true,
+      requiresSettings: true,
+    }
+  );
 
   // Check if API key is required (not yet configured)
   const isApiKeyRequired = !settings?.mistralApiKey && !apiKey;
@@ -476,6 +502,7 @@ export default function RabbitR1() {
       mediaRecorder.start(100);
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
+      setSyncRecording(true); // Update SyncMiddleware recording state
 
       // Play start sound
       playRecordingStartSound();
@@ -488,6 +515,7 @@ export default function RabbitR1() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setSyncRecording(false); // Update SyncMiddleware recording state
 
       // Play stop sound
       playRecordingStopSound();
@@ -551,64 +579,44 @@ export default function RabbitR1() {
     console.log("[RABBIT] ========================================");
 
     try {
-      const token = localStorage.getItem("auth_token");
-      if (!token) {
-        console.log("[RABBIT] ⚠️ No auth token - cannot upload");
-        setIsAuthenticated(false);
-        await indexedDB.updateRecording(localId, { status: "queued" });
-        console.log("[RABBIT] Status updated to 'queued' - waiting for authentication");
-        // Only show login prompt if not currently recording
-        if (!isRecording) {
-          setShowLoginPrompt(true);
-        }
-        return;
-      }
-
-      console.log("[RABBIT] ✅ Auth token found - proceeding with upload");
-      console.log("[RABBIT] Token length:", token.length);
-
       // Mark as uploading
       await indexedDB.updateRecording(localId, { status: "uploading" });
       console.log("[RABBIT] 🔄 Status updated to 'uploading'");
 
-      const formData = new FormData();
-      formData.append("audio", audioBlob);
-      formData.append("duration", duration.toString());
-
-      console.log("[RABBIT] 🚀 Sending POST request to /api/recordings");
+      console.log("[RABBIT] 🚀 Sending POST request to /api/recordings via SyncMiddleware");
       const uploadStartTime = Date.now();
 
-      const response = await fetch("/api/recordings", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      // Use SyncMiddleware for upload - it will handle auth validation automatically
+      const recording = await uploadRecordingRequest(
+        { audioBlob, duration },
+        async () => {
+          const token = getStoredToken();
+          if (!token) {
+            throw new Error("No authentication token");
+          }
+
+          const formData = new FormData();
+          formData.append("audio", audioBlob);
+          formData.append("duration", duration.toString());
+
+          const response = await fetch("/api/recordings", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          });
+
+          if (!response.ok) {
+            throw new Error(`Upload failed with status: ${response.status}`);
+          }
+
+          return await response.json();
+        }
+      );
 
       const uploadDuration = Date.now() - uploadStartTime;
       console.log("[RABBIT] 📊 Upload completed in", uploadDuration, "ms");
-      console.log("[RABBIT] Response status:", response.status, response.statusText);
-
-      if (!response.ok) {
-        // Check if it's an auth error
-        if (response.status === 401) {
-          // Not authenticated - show login prompt (but not during recording)
-          console.log("[RABBIT] ❌ 401 Unauthorized - token invalid or expired");
-          localStorage.removeItem("auth_token");
-          setIsAuthenticated(false);
-          await indexedDB.updateRecording(localId, { status: "queued" });
-          console.log("[RABBIT] Status reset to 'queued' - awaiting re-authentication");
-          if (!isRecording) {
-            setShowLoginPrompt(true);
-          }
-          return;
-        }
-        console.error("[RABBIT] ❌ Upload failed with status:", response.status);
-        throw new Error("Upload failed");
-      }
-
-      const recording = await response.json();
       console.log("[RABBIT] ✅ Upload successful!");
       console.log("[RABBIT] Server Recording ID:", recording.id);
       console.log("[RABBIT] Server Status:", recording.status);
@@ -883,7 +891,13 @@ export default function RabbitR1() {
 
     console.log('[RABBIT SETTINGS] Sending updates:', updates);
 
-    updateSettingsMutation.mutate(updates);
+    updateSettings(updates, async () => {
+      const { apiRequest } = await import('@/lib/queryClient');
+      return await apiRequest('PATCH', '/api/settings', updates);
+    }).catch((error) => {
+      // Error handling is done via event listeners
+      console.error('[RABBIT] Failed to update settings:', error);
+    });
   };
 
   const handleLogout = () => {
@@ -1140,10 +1154,10 @@ export default function RabbitR1() {
               {/* Save Button */}
               <Button
                 onClick={handleSaveSettings}
-                disabled={updateSettingsMutation.isPending || settingsLoading || (isApiKeyRequired && !apiKey)}
+                disabled={isUpdatingSettings || settingsLoading || (isApiKeyRequired && !apiKey)}
                 className="w-full h-9 text-xs"
               >
-                {updateSettingsMutation.isPending ? 'Speichern...' : 'Einstellungen speichern'}
+                {isUpdatingSettings ? 'Speichern...' : 'Einstellungen speichern'}
               </Button>
 
               {/* Logout Button */}
