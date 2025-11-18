@@ -16,9 +16,11 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { queryClient } from '@/lib/queryClient';
 import { useStatusNotification } from '@/hooks/use-status-notification';
-import { useMutation } from '@tanstack/react-query';
+import { useSyncRequest } from '@/hooks/useSyncRequest';
+import { RequestPriority } from '@/services/syncMiddleware/types';
+import { useSyncMiddleware } from '@/contexts/SyncMiddlewareContext';
 
 interface RecordingsListProps {
   recordings: Recording[];
@@ -28,6 +30,7 @@ interface RecordingsListProps {
 
 export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: RecordingsListProps) {
   const { notify } = useStatusNotification();
+  const { syncMiddleware } = useSyncMiddleware();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [editingRecording, setEditingRecording] = useState<Recording | null>(null);
@@ -36,27 +39,43 @@ export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: R
   const [expandedTranscripts, setExpandedTranscripts] = useState<Set<string>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const updateRecordingMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Recording> }) => {
-      return await apiRequest('PATCH', `/api/recordings/${id}`, updates);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
-      notify({
-        title: 'Gespeichert',
-        description: 'Die Änderungen wurden gespeichert.',
-        type: 'success',
-      });
-      setEditingRecording(null);
-    },
-    onError: (error: Error) => {
-      notify({
-        title: 'Fehler',
-        description: error.message || 'Speichern fehlgeschlagen',
-        type: 'error',
-      });
-    },
-  });
+  const { execute: updateRecording, isLoading: isUpdating } = useSyncRequest<Recording, { id: string; updates: Partial<Recording> }>(
+    'recordings:update',
+    {
+      priority: RequestPriority.MEDIUM,
+      requiresAuth: true,
+    }
+  );
+
+  // Listen for success events
+  useEffect(() => {
+    const unsubscribe = syncMiddleware.getEventBus().on('request:success', (data) => {
+      if (data.id.includes('recordings:update')) {
+        queryClient.invalidateQueries({ queryKey: ['/api/recordings'] });
+        notify({
+          title: 'Gespeichert',
+          description: 'Die Änderungen wurden gespeichert.',
+          type: 'success',
+        });
+        setEditingRecording(null);
+      }
+    });
+
+    const unsubscribeError = syncMiddleware.getEventBus().on('request:error', (data) => {
+      if (data.id.includes('recordings:update')) {
+        notify({
+          title: 'Fehler',
+          description: data.error.message || 'Speichern fehlgeschlagen',
+          type: 'error',
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeError();
+    };
+  }, [syncMiddleware, notify]);
 
   const handleEdit = (recording: Recording) => {
     setEditingRecording(recording);
@@ -64,16 +83,25 @@ export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: R
     setEditedSummary(recording.summary || '');
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingRecording) return;
     
-    updateRecordingMutation.mutate({
-      id: editingRecording.id,
-      updates: {
-        transcript: editedTranscript,
-        summary: editedSummary,
-      },
-    });
+    try {
+      const payload = {
+        id: editingRecording.id,
+        updates: {
+          transcript: editedTranscript,
+          summary: editedSummary,
+        },
+      };
+      
+      await updateRecording(payload, async () => {
+        const { apiRequest } = await import('@/lib/queryClient');
+        return await apiRequest('PATCH', `/api/recordings/${payload.id}`, payload.updates);
+      });
+    } catch (error) {
+      // Error handling is done via event listeners
+    }
   };
 
   useEffect(() => {
@@ -351,11 +379,11 @@ export function RecordingsList({ recordings, isLoading, showOnlyOne = false }: R
             </Button>
             <Button
               onClick={handleSaveEdit}
-              disabled={updateRecordingMutation.isPending}
+              disabled={isUpdating}
               data-testid="button-save-edit"
               size="sm"
             >
-              {updateRecordingMutation.isPending ? (
+              {isUpdating ? (
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
               ) : (
                 <Save className="w-3 h-3 mr-1" />
