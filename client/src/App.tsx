@@ -7,16 +7,13 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SyncMiddlewareProvider } from "@/contexts/SyncMiddlewareContext";
 import { AuthRequiredModal } from "@/components/AuthRequiredModal";
 import { SettingsRequiredModal } from "@/components/SettingsRequiredModal";
-import Recordings from "@/pages/recordings";
 import RabbitR1 from "@/pages/rabbit";
-import NotFound from "@/pages/not-found";
 
+//braucht es den router noch oder kann man das auch direkt in der main.tsx machen?
 function Router() {
   return (
     <Switch>
       <Route path="/" component={RabbitR1} />
-      <Route path="/recordings" component={Recordings} />
-      <Route component={NotFound} />
     </Switch>
   );
 }
@@ -27,7 +24,6 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <SyncMiddlewareProvider>
           <TooltipProvider>
-            <Toaster />
             <AuthRequiredModal />
             <SettingsRequiredModal />
             <Router />
@@ -37,5 +33,4 @@ function App() {
     </ErrorBoundary>
   );
 }
-
 export default App;

@@ -47,6 +47,17 @@ const MAX_RECORDING_TIME = 817; // 13:37 in seconds
 export default function RabbitR1() {
   console.log("[RABBIT] Component mounted");
 
+  /**
+   * wenn das Token kommt, speichere das Token im localstorage 
+   * wenn ein request an die API gesendet werden soll,
+   *   - prüfe zuerst ob ein Token im localstorage ist
+   *   - prüfe, ob die Settings vorhanden sind
+   *   - wenn nicht, prüfe den Status der Settings
+   *       - bei 401: zeige Login Modal
+   *       - bei keinen Settings: zeige Settings Modal
+   * **/
+
+  
   // Process token from URL first, before any auth check
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -135,7 +146,6 @@ export default function RabbitR1() {
           type: 'success',
         });
         setShowSettings(false);
-        
         // Emit settings:updated event for other components
         syncMiddleware.getEventBus().emit('settings:updated', { 
           settings: data.data 
