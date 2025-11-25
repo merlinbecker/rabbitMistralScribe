@@ -14,6 +14,8 @@ import type { DatabaseService } from "./databaseService";
 
 export class ReplitStorage implements IStorage {
   private db: DatabaseService;
+  // Audio storage methods (in-memory)
+  private audioData = new Map<string, string>();
 
   constructor(databaseService: DatabaseService) {
     this.db = databaseService;
@@ -231,5 +233,19 @@ export class ReplitStorage implements IStorage {
 
     console.log('[REPLIT_STORAGE] Deleted recording:', { id });
     return true;
+  }
+
+  async saveAudio(id: string, base64Data: string): Promise<void> {
+    console.log(`[REPLIT_STORAGE] Saving audio for ${id} in memory (size: ${base64Data.length})`);
+    this.audioData.set(id, base64Data);
+  }
+
+  async getAudio(id: string): Promise<string | undefined> {
+    return this.audioData.get(id);
+  }
+
+  async deleteAudio(id: string): Promise<void> {
+    console.log(`[REPLIT_STORAGE] Deleting audio for ${id} from memory`);
+    this.audioData.delete(id);
   }
 }

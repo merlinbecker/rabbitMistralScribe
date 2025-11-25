@@ -27,7 +27,7 @@ const upload = multer({
 // Auth middleware using Bearer token only
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader?.startsWith('Bearer ')) {
     console.log('[AUTH] No Bearer token provided');
     return res.status(401).json({
@@ -101,7 +101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = result.user.id;
-      
+
       console.log('[AUTH] ========================================');
       console.log('[AUTH] ✅ OAuth successful');
       console.log('[AUTH] User ID:', userId);
@@ -130,7 +130,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/auth/user', async (req, res) => {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader?.startsWith('Bearer ')) {
       console.log('[AUTH] No Bearer token provided');
       return res.status(401).json({ error: 'Unauthorized' });
@@ -160,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await jobQueue.enqueue(recording.id, userId);
         }
 
-        transcriptionWorker.notifyNewJob().catch(err => 
+        transcriptionWorker.notifyNewJob().catch(err =>
           console.error('[AUTH] Failed to notify worker:', err)
         );
       }
@@ -247,7 +247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/recordings', requireAuth, upload.single('audio'), async (req, res) => {
     const userId = (req as any).userId;
-    
+
     console.log('[ROUTES] ========================================');
     console.log('[ROUTES] 📥 POST /api/recordings - New recording upload');
     console.log('[ROUTES] User ID:', userId);
@@ -267,18 +267,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[ROUTES]   - Duration:', duration, 'seconds');
 
       const audioBase64 = req.file.buffer.toString('base64');
-      const audioUrl = `data:${req.file.mimetype};base64,${audioBase64}`;
 
       console.log('[ROUTES] 💾 Creating recording in database...');
       const createdRecording = await storage.createRecording({
         userId,
-        audioUrl,
+        audioUrl: null, // Don't store large data in DB
         duration,
         status: 'pending',
         transcript: null,
         summary: null,
         githubFileUrl: null,
       });
+
+      // Save audio data to in-memory storage
+      await storage.saveAudio(createdRecording.id, audioBase64);
+      console.log('[ROUTES] 💾 Audio data saved to in-memory storage');
 
       console.log('[ROUTES] ✅ Recording created in database');
       console.log('[ROUTES] Recording ID:', createdRecording.id);
@@ -365,11 +368,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateRecording(id, { status: 'transcribing' });
 
       // Convert base64 audio back to blob for Mistral API
-      if (!recording.audioUrl) {
-        return res.status(400).json({ error: 'No audio data found' });
+      const audioData = await storage.getAudio(id);
+      if (!audioData) {
+        return res.status(400).json({ error: 'No audio data found in memory' });
       }
 
-      const audioData = recording.audioUrl.split(',')[1];
       const audioBuffer = Buffer.from(audioData, 'base64');
 
       // Use MistralService for transcription
@@ -435,8 +438,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(503).json({ 
-        status: 'unhealthy', 
+      res.status(503).json({
+        status: 'unhealthy',
         error: errorMessage,
         timestamp: new Date().toISOString(),
       });

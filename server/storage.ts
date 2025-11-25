@@ -1,5 +1,5 @@
-import { 
-  type User, 
+import {
+  type User,
   type InsertUser,
   type UserSettings,
   type InsertUserSettings,
@@ -28,17 +28,24 @@ export interface IStorage {
   createRecording(recording: InsertRecording): Promise<Recording>;
   updateRecording(id: string, updates: UpdateRecording): Promise<Recording | undefined>;
   deleteRecording(id: string): Promise<boolean>;
+
+  // Audio storage methods (in-memory)
+  saveAudio(id: string, base64Data: string): Promise<void>;
+  getAudio(id: string): Promise<string | undefined>;
+  deleteAudio(id: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private userSettings: Map<string, UserSettings>;
   private recordings: Map<string, Recording>;
+  private audioData: Map<string, string>;
 
   constructor() {
     this.users = new Map();
     this.userSettings = new Map();
     this.recordings = new Map();
+    this.audioData = new Map();
   }
 
   // User methods
@@ -54,8 +61,8 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { 
-      ...insertUser, 
+    const user: User = {
+      ...insertUser,
       id,
       avatarUrl: insertUser.avatarUrl ?? null,
       accessToken: insertUser.accessToken ?? null,
@@ -67,7 +74,7 @@ export class MemStorage implements IStorage {
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-    
+
     const updatedUser = { ...user, ...updates };
     this.users.set(id, updatedUser);
     return updatedUser;
@@ -79,7 +86,7 @@ export class MemStorage implements IStorage {
     const settings = Array.from(this.userSettings.values()).find(
       (settings) => settings.userId === userId,
     );
-    
+
     console.log('[STORAGE] getUserSettings called for userId:', userId);
     console.log('[STORAGE] Found settings:', settings ? {
       id: settings.id,
@@ -87,7 +94,7 @@ export class MemStorage implements IStorage {
       hasMistralKey: !!settings.mistralApiKey,
       mistralKeyLength: settings.mistralApiKey?.length || 0
     } : 'NOT FOUND');
-    
+
     return settings;
   }
 
@@ -104,13 +111,13 @@ export class MemStorage implements IStorage {
     };
     // Use settings.id as key for consistent lookup
     this.userSettings.set(settings.id, settings);
-    
+
     console.log('[STORAGE] Created settings:', {
       id: settings.id,
       userId: settings.userId,
       hasMistralKey: !!settings.mistralApiKey
     });
-    
+
     return settings;
   }
 
@@ -133,14 +140,14 @@ export class MemStorage implements IStorage {
       ...updates,
       updatedAt: new Date(),
     };
-    
+
     console.log('[STORAGE] Updated settings:', {
       id: updatedSettings.id,
       userId: updatedSettings.userId,
       hasMistralKey: !!updatedSettings.mistralApiKey,
       mistralKeyLength: updatedSettings.mistralApiKey?.length || 0
     });
-    
+
     // Store using settings.id as the key for consistent lookup
     this.userSettings.set(updatedSettings.id, updatedSettings);
     return updatedSettings;
@@ -194,7 +201,21 @@ export class MemStorage implements IStorage {
   }
 
   async deleteRecording(id: string): Promise<boolean> {
+    this.audioData.delete(id);
     return this.recordings.delete(id);
+  }
+
+  // Audio storage methods
+  async saveAudio(id: string, base64Data: string): Promise<void> {
+    this.audioData.set(id, base64Data);
+  }
+
+  async getAudio(id: string): Promise<string | undefined> {
+    return this.audioData.get(id);
+  }
+
+  async deleteAudio(id: string): Promise<void> {
+    this.audioData.delete(id);
   }
 }
 
