@@ -7,7 +7,7 @@ interface RabbitStatusBarProps {
   isRecording: boolean;
   recordingTime: number;
   transcriptionStatus?: 'idle' | 'uploading' | 'transcribing' | 'complete' | 'failed';
-  pendingUploads?: number;
+  onSettingsClick?: () => void;
 }
 
 export function RabbitStatusBar({ 
@@ -15,7 +15,8 @@ export function RabbitStatusBar({
   isRecording, 
   recordingTime,
   transcriptionStatus = 'idle',
-  pendingUploads = 0
+  pendingUploads = 0,
+  onSettingsClick
 }: RabbitStatusBarProps) {
   const battery = useBatteryStatus();
 
@@ -70,15 +71,14 @@ export function RabbitStatusBar({
     >
       {/* Left side: Settings icon, Recording timer or connection status */}
       <div className="flex items-center gap-1.5">
-        <Link href="/settings">
-          <button 
-            className="p-0 hover:opacity-70 transition-opacity"
-            aria-label="Einstellungen"
-            data-testid="settings-button"
-          >
-            <Settings className="w-3 h-3" />
-          </button>
-        </Link>
+        <button 
+          onClick={onSettingsClick}
+          className="p-0 hover:opacity-70 transition-opacity"
+          aria-label="Einstellungen"
+          data-testid="settings-button"
+        >
+          <Settings className="w-3 h-3" />
+        </button>
         
         {isRecording ? (
           <span className="font-mono font-bold" data-testid="recording-timer">
