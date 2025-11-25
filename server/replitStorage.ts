@@ -182,7 +182,15 @@ export class ReplitStorage implements IStorage {
       updatedAt: new Date(),
     };
 
-    await this.db.set(this.recordingKey(id), recording);
+    const recordingSize = JSON.stringify(recording).length;
+    console.log(`[REPLIT_STORAGE] Saving recording ${id}, size: ${recordingSize} bytes`);
+
+    try {
+      await this.db.set(this.recordingKey(id), recording);
+    } catch (error) {
+      console.error(`[REPLIT_STORAGE] ❌ Failed to save recording ${id} (size: ${recordingSize} bytes):`, error);
+      throw error;
+    }
 
     // Add to user's recordings list
     const userRecordingsKey = this.userRecordingsKey(insertRecording.userId);

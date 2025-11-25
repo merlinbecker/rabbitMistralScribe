@@ -2,6 +2,16 @@ import type { JobQueue } from './jobQueue';
 import type { IStorage } from './storage';
 import type { IMistralService } from './mistralService';
 import type { IGitHubService } from './githubService';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import ffmpeg from 'fluent-ffmpeg';
+import { promisify } from 'util';
+import { randomUUID } from 'crypto';
+
+const writeFile = promisify(fs.writeFile);
+const readFile = promisify(fs.readFile);
+const unlink = promisify(fs.unlink);
 
 export class TranscriptionWorker {
   private isRunning = false;
@@ -75,6 +85,41 @@ export class TranscriptionWorker {
     }
   }
 
+  private async convertToMp3(inputBuffer: Buffer): Promise<Buffer> {
+    const tempDir = os.tmpdir();
+    const inputPath = path.join(tempDir, `input-${randomUUID()}.webm`);
+    const outputPath = path.join(tempDir, `output-${randomUUID()}.mp3`);
+
+    console.log('[WORKER] 🎵 Converting audio to MP3...');
+
+    try {
+      await writeFile(inputPath, inputBuffer);
+
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+          .toFormat('mp3')
+          .on('end', () => resolve())
+          .on('error', (err) => reject(err))
+          .save(outputPath);
+      });
+
+      const mp3Buffer = await readFile(outputPath);
+      console.log('[WORKER] ✅ Conversion successful, size:', mp3Buffer.length);
+      return mp3Buffer;
+    } catch (error) {
+      console.error('[WORKER] ❌ Audio conversion failed:', error);
+      throw error;
+    } finally {
+      // Cleanup
+      try {
+        if (fs.existsSync(inputPath)) await unlink(inputPath);
+        if (fs.existsSync(outputPath)) await unlink(outputPath);
+      } catch (cleanupError) {
+        console.warn('[WORKER] ⚠️ Failed to cleanup temp files:', cleanupError);
+      }
+    }
+  }
+
   private async transcribeRecording(recordingId: string, userId: string): Promise<void> {
     console.log(`[WORKER] 🎯 Transcribing recording ${recordingId} for user ${userId}`);
 
@@ -89,7 +134,16 @@ export class TranscriptionWorker {
     const audioData = recording.audioUrl.split(',')[1];
     const audioBuffer = Buffer.from(audioData, 'base64');
 
-    const transcriptionResult = await this.mistralService.transcribeAudio(audioBuffer, settings.mistralApiKey);
+    // Convert to MP3
+    let processedBuffer: Buffer;
+    try {
+      processedBuffer = await this.convertToMp3(audioBuffer);
+    } catch (error) {
+      console.error('[WORKER] Conversion failed, falling back to original buffer:', error);
+      processedBuffer = audioBuffer;
+    }
+
+    const transcriptionResult = await this.mistralService.transcribeAudio(processedBuffer, settings.mistralApiKey);
     const transcript = transcriptionResult.text;
 
     let title = 'Audio-Notiz';
