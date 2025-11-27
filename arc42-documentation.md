@@ -191,25 +191,32 @@ RabbitMistralScribe
 ## 6.1 Audio-Aufnahme und Verarbeitung
 
 ```
-1. User drückt sideClick
+1. User ruft Seite auf (rabbit.tsx)
    ↓
-2. MediaRecorder startet
+2. Token-Check (URL SearchParams)
    ↓
-3. Audio → IndexedDB (status: 'queued')
+3. Internet-Check
+   ├─ Nein: Offline-Modus (nur Aufnahme möglich)
+   └─ Ja: Settings abrufen
+       ├─ 401 Unauthorized: Login-Screen anzeigen
+       ├─ Keine Settings (Mistral Key): Settings-Screen anzeigen
+       └─ Settings OK: Bereit
    ↓
-4. Bei Online: Upload zu Server
+4. Aufnahme starten (max 13:37)
    ↓
-5. Server: Job in Queue (status: 'pending')
+5. Aufnahme stoppen -> LocalStorage (IndexedDB)
    ↓
-6. Worker: Transkription via Mistral
+6. Upload-Loop (wenn Online & Settings OK):
    ↓
-7. Zusammenfassung & Titel generieren
+7. Upload zu Server (POST /api/recordings)
    ↓
-8. Optional: Markdown → GitHub
+8. Server: Queue -> Transkription -> GitHub -> Löschen (Audio+Transkript)
    ↓
-9. Client: Status-Update (status: 'transcribed')
-   ↓
-10. Lokale Kopie löschen
+9. Client: Polling (alle 15s)
+   ├─ Status 'pending': Warten
+   └─ Status 'transcribed'/'failed':
+      ↓
+10. Client löscht lokale Aufnahme
 ```
 
 ## 6.2 Offline-Sync-Szenario
@@ -219,17 +226,13 @@ RabbitMistralScribe
    ↓
 2. Device kommt online
    ↓
-3. Auto-Sync prüft pending recordings
+3. Prüfung: Auth OK? Settings OK?
    ↓
-4. Token-Validierung
+4. Upload aller queued Recordings
    ↓
-5. Upload aller queued/failed recordings
+5. Polling bis Completion
    ↓
-6. Server-Verarbeitung beginnt
-   ↓
-7. Client pollt Status alle 15s
-   ↓
-8. Nach Completion: Lokale Kopie löschen
+6. Lokales Löschen
 ```
 
 ---
