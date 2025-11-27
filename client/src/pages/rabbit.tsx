@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Github, X, Check, ExternalLink, LogOut, AlertCircle } from "lucide-react";
+import { Github, X, Check, ExternalLink, LogOut, AlertCircle, Trash2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -30,6 +30,16 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useStatusNotification } from "@/hooks/use-status-notification";
 
 const MAX_RECORDING_TIME = 817; // 13:37 in seconds
@@ -57,6 +67,7 @@ export default function RabbitR1() {
   const [selectedRepo, setSelectedRepo] = useState('');
   const [summaryTemplate, setSummaryTemplate] = useState('');
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const [showClearRecordingsDialog, setShowClearRecordingsDialog] = useState(false);
 
   const isOnline = useOnlineStatus();
   const { notify } = useStatusNotification();
@@ -458,6 +469,26 @@ export default function RabbitR1() {
     notify({ title: 'Abgemeldet', description: 'Erfolgreich abgemeldet', type: 'success' });
   };
 
+  const handleClearRecordings = async () => {
+    try {
+      await indexedDB.clear();
+      refetchLocal();
+      setShowClearRecordingsDialog(false);
+      notify({ 
+        title: 'Aufnahmen gelöscht', 
+        description: 'Alle lokalen Aufnahmen wurden erfolgreich gelöscht.', 
+        type: 'success' 
+      });
+    } catch (error) {
+      console.error('[RABBIT] Failed to clear recordings:', error);
+      notify({ 
+        title: 'Fehler', 
+        description: 'Aufnahmen konnten nicht gelöscht werden.', 
+        type: 'error' 
+      });
+    }
+  };
+
   // Fetch Repos for Settings
   const { data: repos = [] } = useQuery<GitHubRepo[]>({
     queryKey: ['/api/github/repos'],
@@ -575,10 +606,40 @@ export default function RabbitR1() {
 
               <Button onClick={handleSaveSettings} className="w-full h-9 text-xs">Speichern</Button>
               <Button onClick={handleLogout} variant="outline" className="w-full h-9 text-xs border-gray-600 text-white hover:bg-gray-800"><LogOut className="w-3 h-3 mr-2" /> Abmelden</Button>
+              <Button 
+                onClick={() => setShowClearRecordingsDialog(true)} 
+                variant="destructive" 
+                className="w-full h-9 text-xs"
+              >
+                <Trash2 className="w-3 h-3 mr-2" /> Lokale Aufnahmen löschen
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Clear Recordings Confirmation Dialog */}
+      <AlertDialog open={showClearRecordingsDialog} onOpenChange={setShowClearRecordingsDialog}>
+        <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-[280px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white text-sm">Aufnahmen löschen?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-400 text-xs">
+              Alle lokalen Aufnahmen werden unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600 text-xs">
+              Abbrechen
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleClearRecordings}
+              className="bg-red-600 text-white hover:bg-red-700 text-xs"
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Login Modal */}
       {showLoginPrompt && (

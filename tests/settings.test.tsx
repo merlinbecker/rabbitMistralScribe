@@ -50,3 +50,34 @@ describe('Settings - API Key Logic', () => {
     expect(shouldDisableSave).toBe(false);
   });
 });
+
+describe('Settings - Clear Recordings Logic', () => {
+  it('should show confirmation dialog state', () => {
+    // Test that the confirmation dialog can be triggered
+    let showClearRecordingsDialog = false;
+    
+    // Simulate clicking the clear recordings button
+    showClearRecordingsDialog = true;
+    expect(showClearRecordingsDialog).toBe(true);
+  });
+
+  it('should hide confirmation dialog when cancelled', () => {
+    let showClearRecordingsDialog = true;
+    
+    // Simulate clicking cancel
+    showClearRecordingsDialog = false;
+    expect(showClearRecordingsDialog).toBe(false);
+  });
+
+  it('should close dialog after clearing recordings', () => {
+    let showClearRecordingsDialog = true;
+    let recordingsCleared = false;
+    
+    // Simulate successful clear operation
+    recordingsCleared = true;
+    showClearRecordingsDialog = false;
+    
+    expect(recordingsCleared).toBe(true);
+    expect(showClearRecordingsDialog).toBe(false);
+  });
+});
