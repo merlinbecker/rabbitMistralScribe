@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import type { LEDBitmap, BitmapProvider, TransitionConfig } from '@/lib/ledBitmap/types';
 import { AudioSpectrumBitmap } from '@/lib/ledBitmap/providers/AudioSpectrumBitmap';
 import { TransitionEngine } from '@/lib/ledBitmap/TransitionEngine';
@@ -43,6 +43,137 @@ function isLegacyProps(props: LEDPixelDisplayProps): props is LEDPixelDisplayLeg
   return 'isRecording' in props && 'audioStream' in props;
 }
 
+// Pre-compiled regex for hex color parsing (performance optimization)
+const HEX_COLOR_REGEX = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i;
+
+/**
+ * Parse hex color to RGB values
+ */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const result = HEX_COLOR_REGEX.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : { r: 0, g: 0, b: 0 };
+}
+
+/**
+ * Apply brightness to a hex color and return rgba string
+ */
+function applyBrightness(color: string, brightness: number): string {
+  const rgb = hexToRgb(color);
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${brightness})`;
+}
+
+/**
+ * Draw a rounded rectangle on canvas
+ */
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D, 
+  x: number, 
+  y: number, 
+  width: number, 
+  height: number, 
+  radius: number
+): void {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/**
+ * Serialize bitmap for dirty checking - fast hash comparison
+ * Uses array join for better performance with frequent updates
+ */
+function serializeBitmap(bitmap: LEDBitmap): string {
+  const parts: string[] = [];
+  for (let row = 0; row < 16; row++) {
+    for (let col = 0; col < 16; col++) {
+      const p = bitmap[row][col];
+      parts.push(p.color + (p.brightness ?? 1));
+    }
+  }
+  return parts.join('');
+}
+
+/**
+ * Calculate pixel layout dimensions based on canvas size
+ */
+interface PixelLayout {
+  padding: number;
+  pixelSize: number;
+  gapScaled: number;
+  radiusScaled: number;
+}
+
+function calculatePixelLayout(canvasSize: number, pixelGap: number, borderRadius: number): PixelLayout {
+  const padding = 4; // Corresponds to p-1 in tailwind
+  const gridSize = canvasSize - 2 * padding;
+  const scaleFactor = canvasSize / 224; // Base size reference
+  const gapScaled = pixelGap * scaleFactor;
+  const radiusScaled = borderRadius * scaleFactor;
+  const pixelSize = (gridSize - 15 * gapScaled) / 16;
+  
+  return { padding, pixelSize, gapScaled, radiusScaled };
+}
+
+/**
+ * Render the pixel grid to a canvas context
+ */
+function renderPixelGrid(
+  ctx: CanvasRenderingContext2D,
+  bitmap: LEDBitmap,
+  layout: PixelLayout
+): void {
+  const { padding, pixelSize, gapScaled, radiusScaled } = layout;
+  
+  for (let row = 0; row < 16; row++) {
+    for (let col = 0; col < 16; col++) {
+      const pixel = bitmap[row][col];
+      const x = padding + col * (pixelSize + gapScaled);
+      const y = padding + row * (pixelSize + gapScaled);
+
+      // Apply color with brightness
+      ctx.fillStyle = applyBrightness(pixel.color, pixel.brightness ?? 1.0);
+
+      // Draw pixel with optional border radius
+      if (radiusScaled > 0.5) {
+        drawRoundedRect(ctx, x, y, pixelSize, pixelSize, radiusScaled);
+      } else {
+        ctx.fillRect(x, y, pixelSize, pixelSize);
+      }
+    }
+  }
+}
+
+/**
+ * Setup canvas context with proper scaling and settings
+ */
+function setupCanvasContext(ctx: CanvasRenderingContext2D, canvasSize: number): void {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  
+  // Clear canvas with black background
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvasSize, canvasSize);
+}
+
+/**
+ * Canvas-based LED Pixel Display component
+ * Performance optimized for weak devices like Rabbit R1
+ */
 export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
   // Convert legacy props to new bitmap-based API
   const normalizedProps: LEDPixelDisplayNewProps = useMemo(() => {
@@ -80,11 +211,49 @@ export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
     className = ''
   } = normalizedProps;
 
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const lastBitmapHashRef = useRef<string>('');
+  const canvasSizeRef = useRef<number>(0);
 
   const [currentBitmap, setCurrentBitmap] = useState<LEDBitmap>(createEmptyBitmap());
   const transitionEngineRef = useRef(new TransitionEngine(transition));
   const animationFrameRef = useRef<number>();
   const updateTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Render bitmap to canvas
+  const renderCanvas = useCallback((bitmapToRender: LEDBitmap) => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    // Get container size for responsive canvas
+    const canvasSize = container.clientWidth;
+
+    // Only resize canvas if size changed
+    if (canvasSizeRef.current !== canvasSize) {
+      canvasSizeRef.current = canvasSize;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvasSize * dpr;
+      canvas.height = canvasSize * dpr;
+      canvas.style.width = `${canvasSize}px`;
+      canvas.style.height = `${canvasSize}px`;
+      lastBitmapHashRef.current = ''; // Force redraw after resize
+    }
+
+    // Dirty check - only render if bitmap changed
+    const currentHash = serializeBitmap(bitmapToRender);
+    if (currentHash === lastBitmapHashRef.current) return;
+    lastBitmapHashRef.current = currentHash;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Setup context and render
+    setupCanvasContext(ctx, canvasSize);
+    const layout = calculatePixelLayout(canvasSize, pixelGap, borderRadius);
+    renderPixelGrid(ctx, bitmapToRender, layout);
+  }, [pixelGap, borderRadius]);
 
   // Update transition config when it changes
   useEffect(() => {
@@ -160,38 +329,40 @@ export function LEDPixelDisplay(props: LEDPixelDisplayProps) {
     }
   }, [props]);
 
-  // Render pixels - SAME STRUCTURE AS BEFORE
-  const pixels = [];
-  for (let row = 0; row < 16; row++) {
-    for (let col = 0; col < 16; col++) {
-      const pixel = currentBitmap[row][col];
-      
-      pixels.push(
-        <div
-          key={`${row}-${col}`}
-          className="rounded-sm transition-colors duration-75"
-          style={{ 
-            backgroundColor: pixel.color,
-            borderRadius: `${borderRadius}px`,
-            opacity: pixel.brightness ?? 1.0
-          }}
-          data-testid={`led-pixel-${row}-${col}`}
-        />
-      );
-    }
-  }
+  // Render canvas when bitmap changes
+  useEffect(() => {
+    renderCanvas(currentBitmap);
+  }, [currentBitmap, renderCanvas]);
+
+  // Handle container resize
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      // Force canvas resize on container resize
+      canvasSizeRef.current = 0;
+      renderCanvas(currentBitmap);
+    });
+
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [currentBitmap, renderCanvas]);
 
   return (
     <div 
-      className={`w-full aspect-square mx-auto p-1 bg-black rounded-md ${className}`}
+      ref={containerRef}
+      className={`w-full aspect-square mx-auto bg-black rounded-md ${className}`}
       data-testid="led-display"
     >
-      <div 
-        className="grid grid-cols-16 grid-rows-16 w-full h-full"
-        style={{ gap: `${pixelGap}px` }}
-      >
-        {pixels}
-      </div>
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full rounded-md"
+        data-testid="led-canvas"
+      />
     </div>
   );
 }
